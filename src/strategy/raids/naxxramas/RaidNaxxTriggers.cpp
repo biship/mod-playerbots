@@ -41,7 +41,7 @@ bool BossEventTrigger<T>::IsActive()
     {
         return false;
     }
-    const uint32 event_time = eventMap->GetNextEventTime(event_id);
+    const uint32 event_time = eventMap->GetTimeUntilEvent(event_id).count();
     if (event_time != last_event_time)
     {
         last_event_time = event_time;

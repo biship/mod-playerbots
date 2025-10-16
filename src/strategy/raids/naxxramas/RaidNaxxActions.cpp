@@ -57,7 +57,7 @@ uint32 GrobbulusRotateAction::GetCurrWaypoint()
         return false;
     }
     EventMap* eventMap = &boss_ai->events;
-    const uint32 event_time = eventMap->GetNextEventTime(2);
+    const uint32 event_time = eventMap->GetTimeUntilEvent(2).count();
     return (event_time / 15000) % intervals;
 }
 
@@ -75,9 +75,9 @@ bool HeiganDanceAction::CalculateSafe()
     }
     EventMap* eventMap = &boss_ai->events;
     uint32 curr_phase = boss_ai->currentPhase;
-    uint32 curr_erupt = eventMap->GetNextEventTime(3);
-    uint32 curr_dance = eventMap->GetNextEventTime(4);
-    uint32 curr_timer = eventMap->GetTimer();
+    uint32 curr_erupt = eventMap->GetTimeUntilEvent(3).count();
+    uint32 curr_dance = eventMap->GetTimeUntilEvent(4).count();
+    uint32 curr_timer = eventMap->GetTimeUntilEvent(0).count();
     if ((curr_phase == 0 && curr_dance - curr_timer >= 85000) || (curr_phase == 1 && curr_dance - curr_timer >= 40000))
     {
         ResetSafe();

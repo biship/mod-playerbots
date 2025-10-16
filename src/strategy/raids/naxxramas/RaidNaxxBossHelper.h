@@ -60,7 +60,7 @@ public:
         {
             return false;
         }
-        _timer = _event_map->GetTimer();
+        _timer = GetTimer();
         return true;
     }
     virtual void Reset()
@@ -71,6 +71,8 @@ public:
         _event_map = nullptr;
         _timer = 0;
     }
+
+[[nodiscard]] uint32 GetTimer() const { return _timer; }
 
 protected:
     std::string _name;
@@ -88,7 +90,7 @@ public:
     const std::pair<float, float> center = {3716.19f, -5106.58f};
     const std::pair<float, float> tank_pos = {3709.19f, -5104.86f};
     const std::pair<float, float> assist_tank_pos = {3746.05f, -5112.74f};
-    bool IsPhaseOne() { return _event_map->GetNextEventTime(Kelthuzad::EVENT_PHASE_2) != 0; }
+    bool IsPhaseOne() { return _event_map->GetTimeUntilEvent(Kelthuzad::EVENT_PHASE_2).count() != 0; }
     bool IsPhaseTwo() { return !IsPhaseOne(); }
     Unit* GetAnyShadowFissure()
     {
@@ -127,7 +129,7 @@ public:
         {
             return false;
         }
-        uint32 nextEventGround = _event_map->GetNextEventTime(Sapphiron::EVENT_GROUND);
+        uint32 nextEventGround = _event_map->GetTimeUntilEvent(Sapphiron::EVENT_GROUND).count();
         if (nextEventGround && nextEventGround != lastEventGround)
             lastEventGround = nextEventGround;
         return true;
@@ -136,10 +138,10 @@ public:
     bool IsPhaseFlight() { return !IsPhaseGround(); }
     bool JustLanded()
     {
-        return (_event_map->GetNextEventTime(Sapphiron::EVENT_FLIGHT_START) - _timer) >=
-               EVENT_FLIGHT_INTERVAL - POSITION_TIME_AFTER_LANDED;
+        return _event_map->GetTimeUntilEvent(Sapphiron::EVENT_FLIGHT_START).count() >=
+               (EVENT_FLIGHT_INTERVAL - POSITION_TIME_AFTER_LANDED);
     }
-    bool WaitForExplosion() { return _event_map->GetNextEventTime(Sapphiron::EVENT_FLIGHT_SPELL_EXPLOSION); }
+    bool WaitForExplosion() { return _event_map->GetTimeUntilEvent(Sapphiron::EVENT_FLIGHT_SPELL_EXPLOSION).count() > 0; }
     bool FindPosToAvoidChill(std::vector<float>& dest)
     {
         Aura* aura = botAI->GetAura("chill", bot);
@@ -220,7 +222,7 @@ public:
     GluthBossHelper(PlayerbotAI* botAI) : GenericBossHelper(botAI, "gluth") {}
     bool BeforeDecimate()
     {
-        uint32 decimate = _event_map->GetNextEventTime(Gluth::EVENT_DECIMATE);
+        uint32 decimate = _event_map->GetTimeUntilEvent(Gluth::EVENT_DECIMATE).count();
         return decimate && decimate - _timer <= 3000;
     }
     bool JustStartCombat() { return _timer < 10000; }
@@ -263,7 +265,8 @@ public:
             return true;
         }
         ladyEvent = &ladyAI->events;
-        const uint32 voidZone = ladyEvent->GetNextEventTime(FourHorsemen::EVENT_SECONDARY_SPELL);
+        const uint32 voidZone = ladyEvent->GetTimeUntilEvent(FourHorsemen::EVENT_SECONDARY_SPELL).count();
+
         if (voidZone && lastEventVoidZone != voidZone)
         {
             voidZoneCounter++;

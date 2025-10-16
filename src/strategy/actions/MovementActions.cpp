@@ -181,49 +181,44 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
 {
     UpdateMovementState();
     if (!IsMovingAllowed(mapId, x, y, z))
-    {
         return false;
-    }
     if (IsDuplicateMove(mapId, x, y, z))
-    {
         return false;
-    }
     if (IsWaitingForLastMove(priority))
-    {
         return false;
-    }
+
     bool generatePath = !bot->IsFlying() && !bot->isSwimming();
     bool disableMoveSplinePath = sPlayerbotAIConfig->disableMoveSplinePath >= 2 ||
                                  (sPlayerbotAIConfig->disableMoveSplinePath == 1 && bot->InBattleground());
+
+    float orientation = bot->GetOrientation();
+    float speed = backwards ? bot->GetSpeed(MOVE_RUN_BACK) : bot->GetSpeed(MOVE_RUN);
+
     if (Vehicle* vehicle = bot->GetVehicle())
     {
         VehicleSeatEntry const* seat = vehicle->GetSeatForPassenger(bot);
         Unit* vehicleBase = vehicle->GetBase();
         generatePath = vehicleBase->CanFly();
-        if (!vehicleBase || !seat || !seat->CanControl())  // is passenger and cant move anyway
+        if (!vehicleBase || !seat || !seat->CanControl())
             return false;
 
-        float distance = vehicleBase->GetExactDist(x, y, z);  // use vehicle distance, not bot
+        float distance = vehicleBase->GetExactDist(x, y, z);
         if (distance > 0.01f)
         {
-            MotionMaster& mm = *vehicleBase->GetMotionMaster();  // need to move vehicle, not bot
+            MotionMaster& mm = *vehicleBase->GetMotionMaster();
             mm.Clear();
             if (!backwards)
             {
-                mm.MovePoint(0, x, y, z, generatePath);
+                mm.MovePoint(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
             else
             {
-                mm.MovePointBackwards(0, x, y, z, generatePath);
+                mm.MovePointBackwards(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
-            float speed = backwards ? vehicleBase->GetSpeed(MOVE_RUN_BACK) : vehicleBase->GetSpeed(MOVE_RUN);
             float delay = 1000.0f * (distance / speed);
             if (lessDelay)
-            {
                 delay -= botAI->GetReactDelay();
-            }
-            delay = std::max(.0f, delay);
-            delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
+            delay = std::clamp(delay, 0.0f, (float)sPlayerbotAIConfig->maxWaitForMove);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
             return true;
         }
@@ -236,28 +231,20 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             if (bot->IsSitState())
                 bot->SetStandState(UNIT_STAND_STATE_STAND);
 
-            // if (bot->IsNonMeleeSpellCast(true))
-            // {
-            //     bot->CastStop();
-            //     botAI->InterruptSpell();
-            // }
             MotionMaster& mm = *bot->GetMotionMaster();
             mm.Clear();
             if (!backwards)
             {
-                mm.MovePoint(0, x, y, z, generatePath);
+                mm.MovePoint(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
             else
             {
-                mm.MovePointBackwards(0, x, y, z, generatePath);
+                mm.MovePointBackwards(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
             float delay = 1000.0f * MoveDelay(distance, backwards);
             if (lessDelay)
-            {
                 delay -= botAI->GetReactDelay();
-            }
-            delay = std::max(.0f, delay);
-            delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
+            delay = std::clamp(delay, 0.0f, (float)sPlayerbotAIConfig->maxWaitForMove);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
             return true;
         }
@@ -268,44 +255,36 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         Movement::PointsArray path =
             SearchForBestPath(x, y, z, modifiedZ, sPlayerbotAIConfig->maxMovementSearchTime, normal_only);
         if (modifiedZ == INVALID_HEIGHT)
-        {
             return false;
-        }
+
         float distance = bot->GetExactDist(x, y, modifiedZ);
         if (distance > 0.01f)
         {
             if (bot->IsSitState())
                 bot->SetStandState(UNIT_STAND_STATE_STAND);
 
-            // if (bot->IsNonMeleeSpellCast(true))
-            // {
-            //     bot->CastStop();
-            //     botAI->InterruptSpell();
-            // }
             MotionMaster& mm = *bot->GetMotionMaster();
             G3D::Vector3 endP = path.back();
             mm.Clear();
             if (!backwards)
             {
-                mm.MovePoint(0, x, y, z, generatePath);
+                mm.MovePoint(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
             else
             {
-                mm.MovePointBackwards(0, x, y, z, generatePath);
+                mm.MovePointBackwards(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
             }
             float delay = 1000.0f * MoveDelay(distance, backwards);
             if (lessDelay)
-            {
                 delay -= botAI->GetReactDelay();
-            }
-            delay = std::max(.0f, delay);
-            delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
+            delay = std::clamp(delay, 0.0f, (float)sPlayerbotAIConfig->maxWaitForMove);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
             return true;
         }
     }
 
     return false;
+
     //
     // // LOG_DEBUG("playerbots", "IsMovingAllowed {}", IsMovingAllowed());
     // bot->AddUnitMovementFlag()
