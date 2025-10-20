@@ -13,7 +13,7 @@
 #include "PlayerbotAI.h"
 #include "SharedDefines.h"
 
-bool PetAction::Execute(Event event)
+bool BotPetAction::Execute(Event event)
 {
     // Extract the command parameter from the event (e.g., "aggressive", "defensive", "attack", etc.)
     std::string param = event.getParam();

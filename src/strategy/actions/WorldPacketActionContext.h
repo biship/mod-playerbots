@@ -141,7 +141,7 @@ private:
     static Action* tell_not_enough_reputation(PlayerbotAI* botAI) { return new TellMasterAction(botAI, "Not enough reputation"); }
     static Action* tell_cannot_equip(PlayerbotAI* botAI) { return new InventoryChangeFailureAction(botAI); }
     static Action* self_resurrect(PlayerbotAI* botAI) { return new SelfResurrectAction(botAI); }
-    static Action* pet(PlayerbotAI* botAI) { return new PetAction(botAI); }
+    static Action* pet(PlayerbotAI* botAI) { return new BotPetAction(botAI); }
 
     // quest
     static Action* quest_update_add_kill(PlayerbotAI* ai) { return new QuestUpdateAddKillAction(ai); }

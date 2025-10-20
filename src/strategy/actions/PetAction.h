@@ -14,10 +14,10 @@
 
 class PlayerbotAI;
 
-class PetAction : public Action
+class BotPetAction : public Action
 {
 public:
-    PetAction(PlayerbotAI* botAI, const std::string& defaultCmd = "") : Action(botAI, "pet"), defaultCmd(defaultCmd) {}
+    BotPetAction(PlayerbotAI* botAI, const std::string& defaultCmd = "") : Action(botAI, "pet"), defaultCmd(defaultCmd) {}
 
     bool Execute(Event event) override;
 
