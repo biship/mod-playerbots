@@ -205,19 +205,22 @@ void TalkToQuestGiverAction::RewardMultipleItem(Quest const* quest, Object* ques
     }
     else
     {
-        // Try to pick the usable item. If multiple list usable rewards.
+        // Try to pick the usable item. If multiple, list usable rewards.
         bestIds = BestRewards(quest);
-        if (!bestIds.empty())
-        {
+        if (bestIds.size() > 1)
             AskToSelectReward(quest, out, true);
+        else if(!bestIds.empty())
+        {
+            // Pick the first item
+            uint32 firstId = *bestIds.begin();
+            ItemTemplate const* item = sObjectMgr->GetItemTemplate(quest->RewardChoiceItemId[firstId]);
+            bot->RewardQuest(quest, firstId, questGiver, true);
+            
+            out << "Picked " << ChatHelper::FormatItem(item) << " as quest reward.";
         }
         else
         {
-            // Pick the first item
-            ItemTemplate const* item = sObjectMgr->GetItemTemplate(quest->RewardChoiceItemId[*bestIds.begin()]);
-            bot->RewardQuest(quest, *bestIds.begin(), questGiver, true);
-
-            out << "Rewarded " << ChatHelper::FormatItem(item);
+            out << "No usable reward items found.";
         }
     }
 }
