@@ -164,7 +164,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
 
         else if (ShouldDismountForMaster(master) && bot->IsMounted())
         {
-            // Stay mounted to close the gap if still far from master
+            // If master dismounted, stay mounted until close enough to assist
             if (StayMountedToCloseDistance())
                 return false;
 
@@ -186,6 +186,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         // If master just dismounted, prefer to stay mounted until within assist range
         if (StayMountedToCloseDistance())
             return false;
+
         Dismount();
         return true;
     }
@@ -418,8 +419,8 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
     if (!master)
         return false;
 
-    if (!ShouldDismountForMaster(master))
-        return false;
+    //if (!ShouldDismountForMaster(master))
+    //    return false;
 
     float distToMaster = sServerFacade->GetDistance2d(bot, master);
     float dismountRange = CalculateDismountDistance();
