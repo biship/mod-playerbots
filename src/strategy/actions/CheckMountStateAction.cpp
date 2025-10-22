@@ -183,7 +183,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     if (!bot->IsFlying() && shouldDismount && bot->IsMounted() &&
         (enemy || dps || (!noAttackers && bot->IsInCombat())))
     {
-        // If master just dismounted, prefer to stay mounted until within assist range
+        // If master dismounted, stay mounted until close enough to assist
         if (StayMountedToCloseDistance())
             return false;
 
