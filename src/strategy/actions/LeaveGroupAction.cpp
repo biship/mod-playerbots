@@ -88,20 +88,6 @@ bool LeaveGroupAction::Leave()
         botAI->ResetStrategies(!randomBot);
         return true;
     }
-
-    if (botAI->IsAlt())
-    {
-        if (master)
-        {
-            PlayerbotMgr* masterBotMgr = GET_PLAYERBOT_MGR(master);
-            if (masterBotMgr)
-            {
-                masterBotMgr->LogoutPlayerBot(bot->GetGUID());
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 bool LeaveFarAwayAction::Execute(Event event)
