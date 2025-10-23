@@ -168,6 +168,10 @@ bool CheckMountStateAction::Execute(Event /*event*/)
             return true;
         }
 
+        // Mount up to close distance to master if beneficial (using existing mount distance calculation)
+        else if (!bot->IsMounted() && noAttackers && !bot->IsInCombat() && ShouldMountToCloseDistance())
+            return Mount();
+
         return false;
     }
 
@@ -414,6 +418,21 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
     float distToMaster = sServerFacade->GetDistance2d(bot, master);
     float dismountRange = CalculateDismountDistance();
     return distToMaster > dismountRange;
+}
+
+bool CheckMountStateAction::ShouldMountToCloseDistance() const
+{
+    // Mount up to close distance to master if beneficial
+    // Uses the same logic as CalculateMountDistance() which already considers the 2-second mount cast time
+
+    if (!master)
+        return false;
+
+    float distToMaster = sServerFacade->GetDistance2d(bot, master);
+    float mountDistance = CalculateMountDistance();
+
+    // Mount if distance is greater than the calculated mount distance threshold
+    return distToMaster > mountDistance;
 }
 
 float CheckMountStateAction::CalculateDismountDistance() const
