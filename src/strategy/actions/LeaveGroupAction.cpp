@@ -12,7 +12,7 @@
 bool LeaveGroupAction::Execute(Event event)
 {
     Player* player = event.getOwner();
-    if (player == bot->GetMaster() && bot->GetGroup())
+    if (player == botAI->GetMaster() && bot->GetGroup())
         return Leave();
 
     return false;
@@ -53,7 +53,7 @@ bool UninviteAction::Execute(Event event)
         }
 
         if (bot->GetName() == membername)
-            return Leave(bot);
+            return Leave();
     }
 
     if (p.GetOpcode() == CMSG_GROUP_UNINVITE_GUID)
@@ -72,19 +72,18 @@ bool UninviteAction::Execute(Event event)
 bool LeaveGroupAction::Leave()
 {
     if (!botAI &&
-        !botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, false, player))
+        !botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, false, bot))
 
         return false;
-
-    bool aiMaster = GET_PLAYERBOT_AI(botAI->GetMaster()) != nullptr;
-    if (aiMaster)
+    Player* master = botAI -> GetMaster();
+    if (master)
         botAI->TellMaster("Goodbye!", PLAYERBOT_SECURITY_TALK);
-
+    
+    botAI->LeaveOrDisbandGroup();
     bool randomBot = sRandomPlayerbotMgr->IsRandomBot(bot) || sRandomPlayerbotMgr->IsAddclassBot(bot);
     if (randomBot)
     {
-        botAI->LeaveOrDisbandGroup();
-        GET_PLAYERBOT_AI(bot)->SetMaster(nullptr);
+        botAI->SetMaster(nullptr);
         botAI->Reset();
         botAI->ResetStrategies(!randomBot);
         return true;
@@ -92,8 +91,15 @@ bool LeaveGroupAction::Leave()
 
     if (botAI->IsAlt())
     {
-        botAI->SetShouldLogout(true);
-        return true;
+        if (master)
+        {
+            PlayerbotMgr* masterBotMgr = GET_PLAYERBOT_MGR(master);
+            if (masterBotMgr)
+            {
+                masterBotMgr->LogoutPlayerBot(bot->GetGUID());
+                return true;
+            }
+        }
     }
     return false;
 }
