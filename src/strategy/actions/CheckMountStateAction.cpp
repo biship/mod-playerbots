@@ -129,8 +129,8 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         float combatReach = bot->GetCombatReach() + currentTarget->GetCombatReach();
         float distanceToTarget = bot->GetExactDist(currentTarget);
 
-        shouldDismount = (distanceToTarget <= dismountDistance + combatReach);
-        shouldMount = (distanceToTarget > mountDistance + combatReach);
+        shouldDismount = (distanceToTarget <= dismountDistance);
+        shouldMount = (distanceToTarget > mountDistance);
     }
     else
     {
