@@ -146,10 +146,6 @@ bool CheckMountStateAction::Execute(Event /*event*/)
 
     if (shouldDismount && bot->IsMounted())
     {
-        // If master dismounted, stay mounted until close enough to assist
-        if (StayMountedToCloseDistance())
-            return false;
-
         Dismount();
         return true;
     }
@@ -183,10 +179,6 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     if (!bot->IsFlying() && shouldDismount && bot->IsMounted() &&
         (enemy || dps || (!noAttackers && bot->IsInCombat())))
     {
-        // If master dismounted, stay mounted until close enough to assist
-        if (StayMountedToCloseDistance())
-            return false;
-
         Dismount();
         return true;
     }
@@ -418,9 +410,6 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
 
     if (!master)
         return false;
-
-    //if (!ShouldDismountForMaster(master))
-    //    return false;
 
     float distToMaster = sServerFacade->GetDistance2d(bot, master);
     float dismountRange = CalculateDismountDistance();
