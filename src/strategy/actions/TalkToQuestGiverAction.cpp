@@ -205,7 +205,7 @@ void TalkToQuestGiverAction::RewardMultipleItem(Quest const* quest, Object* ques
     }
     else
     {
-        // Try to pick the usable item. If multiple list usable rewards.
+        // Try to pick the usable item. If multiple, list usable rewards.
         bestIds = BestRewards(quest);
         if (bestIds.size() > 1)
             AskToSelectReward(quest, out, true);
