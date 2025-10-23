@@ -255,35 +255,52 @@ void EquipAction::EquipItem(Item* item)
             }
         }
 
-        // If not a special dual-wield/TG scenario or no improvement found, fall back to original logic
-        if (dstSlot == EQUIPMENT_SLOT_FINGER1 ||
-            dstSlot == EQUIPMENT_SLOT_TRINKET1 ||
+         // If not a special dual-wield/TG scenario or no improvement found, fall back to original logic
+        if (dstSlot == EQUIPMENT_SLOT_FINGER1 || dstSlot == EQUIPMENT_SLOT_TRINKET1 ||
             (dstSlot == EQUIPMENT_SLOT_MAINHAND && canDualWield &&
-                ((invType != INVTYPE_2HWEAPON && !have2HWeaponEquipped) || (canTitanGrip && isValidTGWeapon))))
+             ((invType != INVTYPE_2HWEAPON && !have2HWeaponEquipped) || (canTitanGrip && isValidTGWeapon))))
         {
             // Handle ring/trinket dual-slot logic
-            Item* const equippedItems[2] = {
-                bot->GetItemByPos(INVENTORY_SLOT_BAG_0, dstSlot),
-                bot->GetItemByPos(INVENTORY_SLOT_BAG_0, dstSlot + 1)
-            };
+            Item* const equippedItems[2] = {bot->GetItemByPos(INVENTORY_SLOT_BAG_0, dstSlot),
+                                            bot->GetItemByPos(INVENTORY_SLOT_BAG_0, dstSlot + 1)};
 
             if (equippedItems[0])
             {
                 if (equippedItems[1])
                 {
-                    // Both slots are full - pick the worst item to replace
+                    // Both slots are full - pick the worst item to replace, but only if new item is better
                     StatsWeightCalculator calc(bot);
                     calc.SetItemSetBonus(false);
                     calc.SetOverflowPenalty(false);
 
-                    float firstItemScore = calc.CalculateItem(equippedItems[0]->GetTemplate()->ItemId);
-                    float secondItemScore = calc.CalculateItem(equippedItems[1]->GetTemplate()->ItemId);
+                    // Calculate new item score with random properties
+                    int32 newItemRandomProp = item->GetItemRandomPropertyId();
+                    float newItemScore = calc.CalculateItem(itemId, newItemRandomProp);
 
-                    // If the second slot is worse, place the new item there
-                    if (firstItemScore > secondItemScore)
+                    // Calculate equipped items scores with random properties
+                    int32 firstRandomProp = equippedItems[0]->GetItemRandomPropertyId();
+                    int32 secondRandomProp = equippedItems[1]->GetItemRandomPropertyId();
+                    float firstItemScore = calc.CalculateItem(equippedItems[0]->GetTemplate()->ItemId, firstRandomProp);
+                    float secondItemScore =
+                        calc.CalculateItem(equippedItems[1]->GetTemplate()->ItemId, secondRandomProp);
+
+                    // Determine which slot (if any) should be replaced
+                    bool betterThanFirst = newItemScore > firstItemScore;
+                    bool betterThanSecond = newItemScore > secondItemScore;
+
+                    // Early return if new item is not better than either equipped item
+                    if (!betterThanFirst && !betterThanSecond)
+                        return;
+
+                    if (betterThanFirst && betterThanSecond)
                     {
-                        dstSlot++;
+                        // New item is better than both - replace the worse of the two equipped items
+                        if (firstItemScore > secondItemScore)
+                            dstSlot++;  // Replace second slot (worse)
+                        // else: keep dstSlot as-is (replace first slot)
                     }
+                    else if (betterThanSecond)
+                        dstSlot++;  // Only better than second slot - replace it
                 }
                 else
                 {

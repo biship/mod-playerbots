@@ -293,7 +293,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             }
             else
             {
-                mm.MovePointBackwards(0, x, y, z, FORCED_MOVEMENT_NONE, 0.f, 0.f, generatePath);
+                mm.MovePointBackwards(0, x, y, z, generatePath);
             }
             float delay = 1000.0f * MoveDelay(distance, backwards);
             if (lessDelay)
