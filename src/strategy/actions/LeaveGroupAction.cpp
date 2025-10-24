@@ -12,7 +12,7 @@
 bool LeaveGroupAction::Execute(Event event)
 {
     Player* player = event.getOwner();
-    if (player == botAI->GetMaster() && bot->GetGroup())
+    if (player == botAI->GetMaster())
         return Leave();
 
     return false;
@@ -31,7 +31,7 @@ bool PartyCommandAction::Execute(Event event)
         return false;
 
     Player* master = GetMaster();
-    if (master && member == master->GetName() && bot->GetGroup())
+    if (master && member == master->GetName())
         return Leave();
 
     return false;
@@ -71,6 +71,7 @@ bool UninviteAction::Execute(Event event)
 
 bool LeaveGroupAction::Leave()
 {
+    LOG_ERROR("Playerbots", "Leave action for bot {}", bot->GetName());
     if (!botAI &&
         !botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, false, bot))
 
@@ -78,14 +79,16 @@ bool LeaveGroupAction::Leave()
     Player* master = botAI -> GetMaster();
     if (master)
         botAI->TellMaster("Goodbye!", PLAYERBOT_SECURITY_TALK);
-    
-    botAI->LeaveOrDisbandGroup();
-    bool randomBot = sRandomPlayerbotMgr->IsRandomBot(bot) || sRandomPlayerbotMgr->IsAddclassBot(bot);
-    if (randomBot)
+
+
+    if (sRandomPlayerbotMgr->IsRandomBot(bot) || sRandomPlayerbotMgr->IsAddclassBot(bot));
     {
+
+        botAI->LeaveOrDisbandGroup();
+        LOG_ERROR("Playerbots", "BOT is of type randombot or addclass");
         botAI->SetMaster(nullptr);
         botAI->Reset();
-        botAI->ResetStrategies(!randomBot);
+        botAI->ResetStrategies();
         return true;
     }
 }
