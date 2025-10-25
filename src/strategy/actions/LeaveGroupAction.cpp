@@ -71,26 +71,21 @@ bool UninviteAction::Execute(Event event)
 
 bool LeaveGroupAction::Leave()
 {
-    LOG_ERROR("Playerbots", "Leave action for bot {}", bot->GetName());
-    if (!botAI &&
-        !botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, false, bot))
-
+    if (!botAI)
         return false;
+
     Player* master = botAI -> GetMaster();
     if (master)
         botAI->TellMaster("Goodbye!", PLAYERBOT_SECURITY_TALK);
 
 
-    if (sRandomPlayerbotMgr->IsRandomBot(bot) || sRandomPlayerbotMgr->IsAddclassBot(bot));
+    if (sRandomPlayerbotMgr->IsRandomBot(bot))
     {
 
         botAI->LeaveOrDisbandGroup();
-        LOG_ERROR("Playerbots", "BOT is of type randombot or addclass");
-        botAI->SetMaster(nullptr);
-        botAI->Reset();
-        botAI->ResetStrategies();
         return true;
     }
+    return false;
 }
 
 bool LeaveFarAwayAction::Execute(Event event)
