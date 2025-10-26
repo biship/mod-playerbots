@@ -787,7 +787,7 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::LeaveOrDisbandGroup()
 {
-    if (!bot || IsRealPlayer() || !bot->GetGroup())
+    if (!bot || !bot->GetGroup() || IsRealPlayer())
         return;
 
     WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
@@ -1446,7 +1446,7 @@ void PlayerbotAI::DoNextAction(bool min)
         }
     }
 
-    if (master && !bot->GetGroup() && botAI->IsRandomBot()) 
+    if (master && !bot->GetGroup()) 
     {
         SetMaster(nullptr);
         Reset();
