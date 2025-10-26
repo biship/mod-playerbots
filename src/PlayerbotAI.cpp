@@ -787,17 +787,11 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::LeaveOrDisbandGroup()
 {
-    if (!bot || IsRealPlayer())
+    if (!bot || IsRealPlayer() || !bot->GetGroup())
         return;
 
-    if (bot->GetGroup())
-    {
-        WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
-        bot->GetSession()->QueuePacket(packet);
-    } 
-    SetMaster(nullptr);
-    Reset();
-    ResetStrategies();
+    WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
+    bot->GetSession()->QueuePacket(packet);
 }
 
 bool PlayerbotAI::IsAllowedCommand(std::string const text)
@@ -1451,6 +1445,13 @@ void PlayerbotAI::DoNextAction(bool min)
                 botAI->ChangeStrategy("-follow", BOT_STATE_NON_COMBAT);
             }
         }
+    }
+
+    if (master && !bot->GetGroup()) 
+    {
+        SetMaster(nullptr);
+        Reset();
+        ResetStrategies();
     }
 
     if (master && master->IsInWorld())
