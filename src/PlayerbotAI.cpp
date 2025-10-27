@@ -1446,7 +1446,7 @@ void PlayerbotAI::DoNextAction(bool min)
         }
     }
 
-    if (master && !bot->GetGroup()) 
+    if (master && !bot->GetGroup() && sRandomPlayerbotMgr->IsRandomBot(bot)) 
     {
         SetMaster(nullptr);
         Reset();
