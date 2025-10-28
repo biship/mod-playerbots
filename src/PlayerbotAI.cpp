@@ -1363,14 +1363,15 @@ void PlayerbotAI::DoNextAction(bool min)
     if (master)
         masterBotAI = GET_PLAYERBOT_AI(master);
     
-    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-    if (!botAI)
-    {
-        return;
-    }
     // Test BG master set
-    if ((!master || (masterBotAI && !masterBotAI->IsRealPlayer())) && group)
+    if (group && (!master || (masterBotAI && !masterBotAI->IsRealPlayer()) || (master && !group->IsMember(master->GetGUID()))))
     {
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+        {
+            return;
+        }
+
         // Ideally we want to have the leader as master.
         Player* newMaster = botAI->GetGroupMaster();
         Player* playerMaster = nullptr;
