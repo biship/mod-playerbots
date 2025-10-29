@@ -30,10 +30,20 @@ bool PartyCommandAction::Execute(Event event)
     if (operation != PARTY_OP_LEAVE)
         return false;
 
-    Player* master = GetMaster();
+        Player* master = GetMaster();
     if (master && member == master->GetName())
+    {
+        if (sRandomPlayerbotMgr->IsRandomBot(bot))
+        {
+            Player* newMaster = botAI->FindNewMaster();
+            if (newMaster)
+            {
+                botAI->SetMaster(newMaster);
+                return false;
+            }
+        }
         return Leave();
-
+    }
     return false;
 }
 
@@ -78,10 +88,8 @@ bool LeaveGroupAction::Leave()
     if (master)
         botAI->TellMaster("Goodbye!", PLAYERBOT_SECURITY_TALK);
 
-
     if (sRandomPlayerbotMgr->IsRandomBot(bot))
     {
-
         botAI->LeaveOrDisbandGroup();
         return true;
     }
