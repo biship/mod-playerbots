@@ -29,8 +29,8 @@ bool PartyCommandAction::Execute(Event event)
 
     if (operation != PARTY_OP_LEAVE)
         return false;
-
-        Player* master = GetMaster();
+// Only leave if master has left the party, and randombot cannot set new master.
+    Player* master = GetMaster();
     if (master && member == master->GetName())
     {
         if (sRandomPlayerbotMgr->IsRandomBot(bot))
@@ -53,16 +53,16 @@ bool UninviteAction::Execute(Event event)
     if (p.GetOpcode() == CMSG_GROUP_UNINVITE)
     {
         p.rpos(0);
-        std::string membername;
-        p >> membername;
+        std::string memberName;
+        p >> memberName;
 
         // player not found
-        if (!normalizePlayerName(membername))
+        if (!normalizePlayerName(memberName))
         {
             return false;
         }
 
-        if (bot->GetName() == membername)
+        if (bot->GetName() == memberName)
             return Leave();
     }
 

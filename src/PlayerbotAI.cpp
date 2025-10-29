@@ -787,11 +787,13 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::LeaveOrDisbandGroup()
 {
-    if (!bot || !bot->GetGroup() || IsRealPlayer())
+    if (!bot || IsRealPlayer())
         return;
-
-    WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
-    bot->GetSession()->QueuePacket(packet);
+    if (bot->GetGroup())
+    {
+        WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
+        bot->GetSession()->QueuePacket(packet);
+    }
     SetMaster(nullptr);
     Reset();
     ResetStrategies();
