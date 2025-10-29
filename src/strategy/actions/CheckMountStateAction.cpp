@@ -122,8 +122,11 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     bool shouldMount = false;
 
     Unit* currentTarget = AI_VALUE(Unit*, "current target");
-    if (currentTarget)
+    bool masterInCombat = master && master->IsInCombat();
+
+    if (currentTarget && (bot->IsInCombat() || masterInCombat))
     {
+        // Use target-based logic if bot is in combat OR master is in combat and needs assistance
         float dismountDistance = CalculateDismountDistance();
         float mountDistance = CalculateMountDistance();
         float combatReach = bot->GetCombatReach() + currentTarget->GetCombatReach();
@@ -134,6 +137,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     }
     else
     {
+        // If neither bot nor master is in combat, prioritize master-following
         shouldMount = true;
     }
 
@@ -168,7 +172,8 @@ bool CheckMountStateAction::Execute(Event /*event*/)
             return true;
         }
 
-        // Mount up to close distance to master if beneficial (using existing mount distance calculation)
+        // Mount up to close distance to master if beneficial - allow mounting even if master is in combat
+        // as long as the bot itself is not in combat and has no attackers
         else if (!bot->IsMounted() && noAttackers && !bot->IsInCombat() && ShouldMountToCloseDistance())
             return Mount();
 
@@ -409,21 +414,31 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
 {
     // Keep the bot mounted while closing distance to a recently dismounted master.
     // Rationale: if the master dismounts far away, immediately dismounting slows the bot down
-    // and delays assistance. Instead, remain mounted until within CalculateDismountDistance()
+    // and delays assistance. Instead, remain mounted until within reasonable proximity
     // of the master, then dismount to help.
 
     if (!master)
         return false;
 
     float distToMaster = sServerFacade->GetDistance2d(bot, master);
-    float dismountRange = CalculateDismountDistance();
-    return distToMaster > dismountRange;
+
+    // If master is in combat, dismount at combat assist range to help immediately
+    if (master->IsInCombat())
+    {
+        float assistRange = CalculateDismountDistance();
+        return distToMaster > assistRange;
+    }
+
+    // If master is not in combat, use smaller proximity range for general following
+    float masterProximityRange = 10.0f; // Close enough to be near master but not attack range
+    return distToMaster > masterProximityRange;
 }
 
 bool CheckMountStateAction::ShouldMountToCloseDistance() const
 {
     // Mount up to close distance to master if beneficial
     // Uses the same logic as CalculateMountDistance() which already considers the 2-second mount cast time
+    // This handles cases where master is in combat but bot isn't, and bot needs to mount to reach master
 
     if (!master)
         return false;
