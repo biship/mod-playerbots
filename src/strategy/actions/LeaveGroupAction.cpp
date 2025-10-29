@@ -29,7 +29,7 @@ bool PartyCommandAction::Execute(Event event)
 
     if (operation != PARTY_OP_LEAVE)
         return false;
-// Only leave if master has left the party, and randombot cannot set new master.
+    // Only leave if master has left the party, and randombot cannot set new master.
     Player* master = GetMaster();
     if (master && member == master->GetName())
     {

@@ -355,7 +355,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     }
 
     // Update the bot's group status (moved to helper function)
-    UpdateAIGroupMembership();
+    UpdateAIGroupAndMaster();
 
     // Update internal AI
     UpdateAIInternal(elapsed, minimal);
@@ -363,47 +363,56 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 }
 
 // Helper function for UpdateAI to check group membership and handle removal if necessary
-void PlayerbotAI::UpdateAIGroupMembership()
+void PlayerbotAI::UpdateAIGroupAndMaster()
 {
-    if (!bot || !bot->GetGroup())
+    if (!bot)
+        return;
+    Group* group = bot->GetGroup();
+    // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
+    if (!group)
+    {
+        if (master && sRandomPlayerbotMgr->IsRandomBot(bot))
+        {
+            SetMaster(nullptr);
+            Reset(true);
+            ResetStrategies();
+        }
+        return;
+    }
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
         return;
 
-    Group* group = bot->GetGroup();
+    PlayerbotAI* masterBotAI = nullptr;
+    if (master)
+        masterBotAI = GET_PLAYERBOT_AI(master);
 
-    if (!bot->InBattleground() && !bot->inRandomLfgDungeon() && !group->isLFGGroup())
+    if (!master || (masterBotAI && !masterBotAI->IsRealPlayer()))
     {
-        Player* leader = group->GetLeader();
-        if (leader && leader != bot)  // Ensure the leader is valid and not the bot itself
+        Player* newMaster = FindNewMaster();
+        if (newMaster)
         {
-            PlayerbotAI* leaderAI = GET_PLAYERBOT_AI(leader);
-            if (leaderAI && !leaderAI->IsRealPlayer())
+            master = newMaster;
+            botAI->SetMaster(newMaster);
+            botAI->ResetStrategies();
+
+            if (!bot->InBattleground())
             {
-                LeaveOrDisbandGroup();
+                botAI->ChangeStrategy("+follow", BOT_STATE_NON_COMBAT);
+
+                if (botAI->GetMaster() == botAI->GetGroupMaster())
+                    botAI->TellMaster("Hello, I follow you!");
+                else
+                    botAI->TellMaster(!urand(0, 2) ? "Hello!" : "Hi!");
+            }
+            else
+            {
+                // we're in a battleground, stay with the pack and focus on objective
+                botAI->ChangeStrategy("-follow", BOT_STATE_NON_COMBAT);
             }
         }
-    }
-    else if (group->isLFGGroup())
-    {
-        bool hasRealPlayer = false;
-
-        // Iterate over all group members to check if at least one is a real player
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-        {
-            Player* member = ref->GetSource();
-            if (!member)
-                continue;
-
-            PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
-            if (memberAI && !memberAI->IsRealPlayer())
-                continue;
-
-            hasRealPlayer = true;
-            break;
-        }
-        if (!hasRealPlayer)
-        {
+        else
             LeaveOrDisbandGroup();
-        }
     }
 }
 
@@ -794,8 +803,9 @@ void PlayerbotAI::LeaveOrDisbandGroup()
         WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
         bot->GetSession()->QueuePacket(packet);
     }
-    SetMaster(nullptr);
-    Reset();
+    if (sRandomPlayerbotMgr->IsRandomBot(bot))
+        SetMaster(nullptr);
+    Reset(true);
     ResetStrategies();
 }
 
@@ -1305,7 +1315,6 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
-
     // Change engine if just died
     bool isBotAlive = bot->IsAlive();
     if (currentEngine != engines[BOT_STATE_DEAD] && !isBotAlive)
@@ -1365,47 +1374,6 @@ void PlayerbotAI::DoNextAction(bool min)
 
     Group* group = bot->GetGroup();
     PlayerbotAI* masterBotAI = nullptr;
-    if (master)
-        masterBotAI = GET_PLAYERBOT_AI(master);
-    
-    // Test BG master set
-    if (group && (!master || (masterBotAI && !masterBotAI->IsRealPlayer())))
-    {
-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        if (!botAI)
-            return;
-
-        Player* newMaster = FindNewMaster();
-
-        if (newMaster && (!master || master != newMaster) && bot != newMaster)
-        {
-            master = newMaster;
-            botAI->SetMaster(newMaster);
-            botAI->ResetStrategies();
-
-            if (!bot->InBattleground())
-            {
-                botAI->ChangeStrategy("+follow", BOT_STATE_NON_COMBAT);
-
-                if (botAI->GetMaster() == botAI->GetGroupMaster())
-                    botAI->TellMaster("Hello, I follow you!");
-                else
-                    botAI->TellMaster(!urand(0, 2) ? "Hello!" : "Hi!");
-            }
-            else
-            {
-                // we're in a battleground, stay with the pack and focus on objective
-                botAI->ChangeStrategy("-follow", BOT_STATE_NON_COMBAT);
-            }
-        }
-    }
-
-    if (master && !group && sRandomPlayerbotMgr->IsRandomBot(bot)) 
-    {
-        SetMaster(nullptr);
-        Reset(true);
-        ResetStrategies();
-    }
 
     if (master && master->IsInWorld())
     {
