@@ -88,12 +88,8 @@ bool LeaveGroupAction::Leave()
     if (master)
         botAI->TellMaster("Goodbye!", PLAYERBOT_SECURITY_TALK);
 
-    if (sRandomPlayerbotMgr->IsRandomBot(bot))
-    {
-        botAI->LeaveOrDisbandGroup();
-        return true;
-    }
-    return false;
+    botAI->LeaveOrDisbandGroup();
+    return true;
 }
 
 bool LeaveFarAwayAction::Execute(Event event)
