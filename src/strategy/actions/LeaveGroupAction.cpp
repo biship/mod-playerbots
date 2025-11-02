@@ -36,7 +36,7 @@ bool PartyCommandAction::Execute(Event event)
         if (sRandomPlayerbotMgr->IsRandomBot(bot))
         {
             Player* newMaster = botAI->FindNewMaster();
-            if (newMaster)
+            if (newMaster || bot->InBattleground())
             {
                 botAI->SetMaster(newMaster);
                 return false;

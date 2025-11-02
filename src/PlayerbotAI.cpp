@@ -379,6 +379,10 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
         }
         return;
     }
+
+    if (bot->IsInBattleGround() && bot->GetBattleground()->GetBgTypeID() != BATTLEGROUND_AV)
+        return;
+
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
     if (!botAI)
         return;
@@ -411,7 +415,7 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
                 botAI->ChangeStrategy("-follow", BOT_STATE_NON_COMBAT);
             }
         }
-        else
+        else if (!newMaster && !bot->InBattleground())
             LeaveOrDisbandGroup();
     }
 }
@@ -4060,64 +4064,45 @@ bool IsAlliance(uint8 race)
 Player* PlayerbotAI::FindNewMaster()
 {
     // Ideally we want to have the leader as master.
-    Player* newMaster = nullptr;
-    Player* playerMaster = nullptr;
-
+    Group* group = bot->GetGroup()
     // Only allow real players as masters unless in battleground.
-    if (Group* group = bot->GetGroup())
+    if (!group)
+        return newMaster;
+
+    Player* groupLeader = GetGroupMaster();
+    PlayerbotAI* leaderBotAI = GET_PLAYERBOT_AI(groupLeader);
+    if (!leaderBotAI || leaderBotAI->IsRealPlayer())
+        return groupLeader;
+
+    // Find the real player in group
+    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
     {
-        Player* groupLeader = GetGroupMaster();
-        PlayerbotAI* leaderBotAI = GET_PLAYERBOT_AI(groupLeader);
-        if (!leaderBotAI || !leaderBotAI->IsRealPlayer())
+        Player* member = gref->GetSource();
+        if (!member || member == bot || !member->IsInWorld() ||
+            !member->IsInSameRaidWith(bot))
+            continue;
+
+        PlayerbotAI* memberBotAI = GET_PLAYERBOT_AI(member);
+        if ((!memberBotAI || memberBotAI->IsRealPlayer()) && !bot->InBattleground())
+            return member;
+
+        if (bot->InBattleground() && bot->GetBattleground() &&
+            bot->GetBattleground()->GetBgTypeID() == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
+            member->InBattleground() && bot->GetMapId() == member->GetMapId())
         {
-            for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
-            {
-                Player* member = gref->GetSource();
-                if (!member || member == bot || member == newMaster || !member->IsInWorld() ||
-                    !member->IsInSameRaidWith(bot))
-                    continue;
+            // Skip if same BG but same subgroup or lower level
+            if (!group->SameSubGroup(bot, member) || member->GetLevel() < bot->GetLevel())
+                continue;
 
-                PlayerbotAI* memberBotAI = GET_PLAYERBOT_AI(member);
-                if (memberBotAI)
-                {
-                    if (memberBotAI->IsRealPlayer() && !bot->InBattleground())
-                        playerMaster = member;
+            // Follow real player only if higher honor points
+            uint32 honorpts = member->GetHonorPoints();
+            if (bot->GetHonorPoints() && honorpts < bot->GetHonorPoints())
+                continue;
 
-                    continue;
-                }
-
-                // Same BG checks (optimize checking conditions here)
-                if (bot->InBattleground() && bot->GetBattleground() &&
-                    bot->GetBattleground()->GetBgTypeID() == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
-                    member->InBattleground() && bot->GetMapId() == member->GetMapId())
-                {
-                    // Skip if same BG but same subgroup or lower level
-                    if (!group->SameSubGroup(bot, member) || member->GetLevel() < bot->GetLevel())
-                        continue;
-
-                    // Follow real player only if higher honor points
-                    uint32 honorpts = member->GetHonorPoints();
-                    if (bot->GetHonorPoints() && honorpts < bot->GetHonorPoints())
-                        continue;
-
-                    playerMaster = member;
-                    continue;
-                }
-
-                if (bot->InBattleground())
-                    continue;
-
-                newMaster = member;
-                break;
-            }
+            return member;
         }
-        else
-            newMaster = groupLeader;
     }
-
-    if (!newMaster && playerMaster)
-        newMaster = playerMaster;
-    return newMaster;
+    return nullptr;
 }
 
 bool PlayerbotAI::HasRealPlayerMaster()
