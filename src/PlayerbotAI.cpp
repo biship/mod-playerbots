@@ -380,7 +380,7 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
         return;
     }
 
-    if (bot->IsInBattleGround() && bot->GetBattleground()->GetBgTypeID() != BATTLEGROUND_AV)
+    if (bot->InBattleground() && bot->GetBattleground()->GetBgTypeID() != BATTLEGROUND_AV)
         return;
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
@@ -4064,10 +4064,10 @@ bool IsAlliance(uint8 race)
 Player* PlayerbotAI::FindNewMaster()
 {
     // Ideally we want to have the leader as master.
-    Group* group = bot->GetGroup()
+    Group* group = bot->GetGroup();
     // Only allow real players as masters unless in battleground.
     if (!group)
-        return newMaster;
+        return nullptr;
 
     Player* groupLeader = GetGroupMaster();
     PlayerbotAI* leaderBotAI = GET_PLAYERBOT_AI(groupLeader);
