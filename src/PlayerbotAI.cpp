@@ -800,17 +800,11 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::LeaveOrDisbandGroup()
 {
-    if (!bot || IsRealPlayer())
+    if (!bot || !bot->GetGroup() || IsRealPlayer())
         return;
-    if (bot->GetGroup())
-    {
-        WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
-        bot->GetSession()->QueuePacket(packet);
-    }
-    if (sRandomPlayerbotMgr->IsRandomBot(bot))
-        SetMaster(nullptr);
-    Reset(true);
-    ResetStrategies();
+
+    WorldPacket* packet = new WorldPacket(CMSG_GROUP_DISBAND);
+    bot->GetSession()->QueuePacket(packet);
 }
 
 bool PlayerbotAI::IsAllowedCommand(std::string const text)
