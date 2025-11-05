@@ -268,18 +268,17 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (sRandomPlayerbotMgr->IsAddclassBot(bot))
     {
         Player* master = GetMaster();
-        Group* group = bot->GetGroup();
-
-        const bool masterValid = (master && master->IsInWorld());
-        const bool masterInGroup = (group && master && group->IsMember(master->GetGUID()));
-
-        if (!masterValid || !group || !masterInGroup)
+        if (master && master->IsInWorld())
         {
-            if (master)
+            Group* group = bot->GetGroup();
+            const bool masterInGroup = (group && group->IsMember(master->GetGUID()));
+            if (!group || !masterInGroup)
+            {
                 if (auto* mgr = GET_PLAYERBOT_MGR(master))
                     mgr->EnqueueLogout(bot->GetGUID());
 
-            return;
+                return; // stop AI update
+            }
         }
     }
 
@@ -493,14 +492,12 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
             PlayerbotMgr* masterBotMgr = nullptr;
             if (master)
                 masterBotMgr = GET_PLAYERBOT_MGR(master);
-            if (masterBotMgr)
-            {
+
+            if (masterBotMgr)   
                 masterBotMgr->EnqueueLogout(bot->GetGUID());
-            }
             else
-            {
                 sRandomPlayerbotMgr->EnqueueLogout(bot->GetGUID());
-            }
+
             return;
         }
 

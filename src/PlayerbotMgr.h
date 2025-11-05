@@ -62,8 +62,6 @@ protected:
     std::unordered_set<ObjectGuid> botLoading;
     std::vector<ObjectGuid> m_pendingLogout;
     void LogoutPlayerBot(ObjectGuid guid);
-private:
-   
 };
 
 class PlayerbotMgr : public PlayerbotHolder

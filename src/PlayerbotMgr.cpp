@@ -227,9 +227,7 @@ void PlayerbotHolder::UpdateSessions()
         toLogout.swap(m_pendingLogout);
 
         for (ObjectGuid const& guid : toLogout)
-        {
             LogoutPlayerBot(guid);
-        }
     }
 }
 
@@ -324,9 +322,7 @@ void PlayerbotMgr::CancelLogout()
 void PlayerbotHolder::EnqueueLogout(ObjectGuid playerGuid)
 {
     if (std::find(m_pendingLogout.begin(), m_pendingLogout.end(), playerGuid) == m_pendingLogout.end())
-    {
         m_pendingLogout.push_back(playerGuid);
-    }
 }
 
 void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
