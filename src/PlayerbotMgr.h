@@ -31,7 +31,7 @@ public:
     bool IsAccountLinked(uint32 accountId, uint32 masterAccountId);
     void HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder const& holder);
 
-    void LogoutPlayerBot(ObjectGuid guid);
+    void EnqueueLogout(ObjectGuid guid);
     void DisablePlayerBot(ObjectGuid guid);
     void RemoveFromPlayerbotsMap(ObjectGuid guid);
     Player* GetPlayerBot(ObjectGuid guid) const;
@@ -58,9 +58,12 @@ public:
 
 protected:
     virtual void OnBotLoginInternal(Player* const bot) = 0;
-
     PlayerBotMap playerBots;
     std::unordered_set<ObjectGuid> botLoading;
+    std::vector<ObjectGuid> m_pendingLogout;
+    void LogoutPlayerBot(ObjectGuid guid);
+private:
+   
 };
 
 class PlayerbotMgr : public PlayerbotHolder
