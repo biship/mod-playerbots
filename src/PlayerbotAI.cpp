@@ -492,12 +492,10 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
             PlayerbotMgr* masterBotMgr = nullptr;
             if (master)
                 masterBotMgr = GET_PLAYERBOT_MGR(master);
-
-            if (masterBotMgr)   
+            if (masterBotMgr)
                 masterBotMgr->EnqueueLogout(bot->GetGUID());
             else
                 sRandomPlayerbotMgr->EnqueueLogout(bot->GetGUID());
-
             return;
         }
 
