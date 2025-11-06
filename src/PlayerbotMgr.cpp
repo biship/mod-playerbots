@@ -32,7 +32,6 @@
 #include "RandomPlayerbotMgr.h"
 #include "SharedDefines.h"
 #include "WorldSession.h"
-#include "ChannelMgr.h"
 #include "BroadcastHelper.h"
 #include "PlayerbotDbStore.h"
 #include "WorldSessionMgr.h"
@@ -219,12 +218,31 @@ void PlayerbotHolder::UpdateSessions()
         }
     }
 
-    // logout enqueud players after handling the world packets
+    // logout/cancel enqueued players after handling the world packets
+    std::vector<PostedOp> localInbox;
+    {
+        std::lock_guard<std::mutex> lock(m_inboxMutex);
+        if (!m_inbox.empty())
+            localInbox.swap(m_inbox);
+    }
+    if (!localInbox.empty())
+    {
+        // Handle intend
+        for (PostedOp const& p : localInbox)
+        {
+            if (p.op == BotOp::Logout)
+                m_pendingLogout.insert(p.guid);
+            else  // Cancel
+                m_pendingLogout.erase(p.guid);
+        }
+    }
+
+    // safe execute
     if (!m_pendingLogout.empty())
     {
-        // empty and move to local vector
-        std::vector<ObjectGuid> toLogout;
-        toLogout.swap(m_pendingLogout);
+        // Move to local vector before destructive work
+        std::vector<ObjectGuid> toLogout(m_pendingLogout.begin(), m_pendingLogout.end());
+        m_pendingLogout.clear();
 
         for (ObjectGuid const& guid : toLogout)
             LogoutPlayerBot(guid);
@@ -249,20 +267,11 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
     }
 }
 
-void PlayerbotHolder::LogoutAllBots()
+void PlayerbotHolder::EnqueueLogoutAllBots()
 {
-    /*
-    while (true)
-    {
-        PlayerBotMap::const_iterator itr = GetPlayerBotsBegin();
-        if (itr == GetPlayerBotsEnd())
-            break;
-
-        Player* bot= itr->second;
-        if (!GET_PLAYERBOT_AI(bot)->IsRealPlayer())
-            LogoutPlayerBot(bot->GetGUID());
-    }
-    */
+    // Collect eligible GUIDs first (cheap & safe)
+    std::vector<ObjectGuid> guids;
+    guids.reserve(playerBots.size());
 
     PlayerBotMap bots = playerBots;
     for (auto& itr : bots)
@@ -275,8 +284,12 @@ void PlayerbotHolder::LogoutAllBots()
         if (!botAI || botAI->IsRealPlayer())
             continue;
 
-        LogoutPlayerBot(bot->GetGUID());
+        guids.push_back(itr.first);
     }
+
+    // Post intents (thread-safe); actual teardown happens in UpdateSessions()
+    for (ObjectGuid const& guid : guids)
+        EnqueueLogout(guid);
 }
 
 void PlayerbotMgr::CancelLogout()
@@ -298,6 +311,8 @@ void PlayerbotMgr::CancelLogout()
             bot->GetSession()->HandleLogoutCancelOpcode(data);
             botAI->TellMaster("Logout cancelled!");
         }
+
+        EnqueueCancelLogout(bot->GetGUID());
     }
 
     for (PlayerBotMap::const_iterator it = sRandomPlayerbotMgr->GetPlayerBotsBegin();
@@ -316,13 +331,22 @@ void PlayerbotMgr::CancelLogout()
             WorldPackets::Character::LogoutCancel data = WorldPacket(CMSG_LOGOUT_CANCEL);
             bot->GetSession()->HandleLogoutCancelOpcode(data);
         }
+
+        EnqueueCancelLogout(bot->GetGUID());
     }
 }
 
-void PlayerbotHolder::EnqueueLogout(ObjectGuid playerGuid)
+
+void PlayerbotHolder::EnqueueLogout(ObjectGuid guid)
 {
-    if (std::find(m_pendingLogout.begin(), m_pendingLogout.end(), playerGuid) == m_pendingLogout.end())
-        m_pendingLogout.push_back(playerGuid);
+    std::lock_guard<std::mutex> lock(m_inboxMutex);
+    m_inbox.push_back({guid, BotOp::Logout});
+}
+
+void PlayerbotHolder::EnqueueCancelLogout(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(m_inboxMutex);
+    m_inbox.push_back({guid, BotOp::Cancel});
 }
 
 void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
@@ -730,7 +754,7 @@ std::string const PlayerbotHolder::ProcessBotCommand(std::string const cmd, Obje
         if (!GetPlayerBot(guid))
             return "not your bot";
 
-        LogoutPlayerBot(guid);
+        EnqueueLogout(guid); 
         return "ok";
     }
 
@@ -1555,7 +1579,7 @@ void PlayerbotMgr::HandleMasterIncomingPacket(WorldPacket const& packet)
         // if master is logging out, log out all bots
         case CMSG_LOGOUT_REQUEST:
         {
-            LogoutAllBots();
+            EnqueueLogoutAllBots();
             break;
         }
         // if master cancelled logout, cancel too
