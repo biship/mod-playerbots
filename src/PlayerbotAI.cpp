@@ -264,6 +264,24 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (!CanUpdateAI())
         return;
 
+    // Handle floating addClass bots
+    if (sRandomPlayerbotMgr->IsAddclassBot(bot))
+    {
+        Player* master = GetMaster();
+        if (master && master->IsInWorld())
+        {
+            Group* group = bot->GetGroup();
+            const bool masterInGroup = (group && group->IsMember(master->GetGUID()));
+            if (!group || !masterInGroup)
+            {
+                if (auto* mgr = GET_PLAYERBOT_MGR(master))
+                    mgr->EnqueueLogout(bot->GetGUID());
+
+                return; // stop AI update
+            }
+        }
+    }
+
     // Handle the current spell
     Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     if (!currentSpell)
@@ -367,8 +385,9 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
 {
     if (!bot)
         return;
+
+     // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
     Group* group = bot->GetGroup();
-    // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
     if (!group)
     {
         if (master && sRandomPlayerbotMgr->IsRandomBot(bot))
@@ -474,13 +493,9 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
             if (master)
                 masterBotMgr = GET_PLAYERBOT_MGR(master);
             if (masterBotMgr)
-            {
-                masterBotMgr->LogoutPlayerBot(bot->GetGUID());
-            }
+                masterBotMgr->EnqueueLogout(bot->GetGUID());
             else
-            {
-                sRandomPlayerbotMgr->LogoutPlayerBot(bot->GetGUID());
-            }
+                sRandomPlayerbotMgr->EnqueueLogout(bot->GetGUID());
             return;
         }
 
@@ -950,7 +965,7 @@ void PlayerbotAI::HandleCommand(uint32 type, std::string const text, Player* fro
             if (master)
                 masterBotMgr = GET_PLAYERBOT_MGR(master);
             if (masterBotMgr)
-                masterBotMgr->LogoutPlayerBot(bot->GetGUID());
+                masterBotMgr->EnqueueLogout(bot->GetGUID());
         }
     }
     else if (filtered == "logout cancel")
