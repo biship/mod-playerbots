@@ -218,17 +218,6 @@ void PlayerbotHolder::UpdateSessions()
             HandleBotPackets(bot->GetSession());
         }
     }
-
-    // logout enqueud players after handling the world packets
-    if (!m_pendingLogout.empty())
-    {
-        // empty and move to local vector
-        std::vector<ObjectGuid> toLogout;
-        toLogout.swap(m_pendingLogout);
-
-        for (ObjectGuid const& guid : toLogout)
-            LogoutPlayerBot(guid);
-    }
 }
 
 void PlayerbotHolder::HandleBotPackets(WorldSession* session)
@@ -317,12 +306,6 @@ void PlayerbotMgr::CancelLogout()
             bot->GetSession()->HandleLogoutCancelOpcode(data);
         }
     }
-}
-
-void PlayerbotHolder::EnqueueLogout(ObjectGuid playerGuid)
-{
-    if (std::find(m_pendingLogout.begin(), m_pendingLogout.end(), playerGuid) == m_pendingLogout.end())
-        m_pendingLogout.push_back(playerGuid);
 }
 
 void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
