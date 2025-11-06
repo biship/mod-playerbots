@@ -32,6 +32,7 @@
 #include "RandomPlayerbotMgr.h"
 #include "SharedDefines.h"
 #include "WorldSession.h"
+#include "ChannelMgr.h"
 #include "BroadcastHelper.h"
 #include "PlayerbotDbStore.h"
 #include "WorldSessionMgr.h"
@@ -82,34 +83,10 @@ public:
     PlayerbotHolder* GetPlayerbotHolder() { return playerbotHolder; }
 };
 
-bool PlayerbotHolder::IsBotLoading(ObjectGuid guid) const
-{
-    std::scoped_lock lock(botLoadingMutex);
-    return botLoading.contains(guid);
-}
-
-void PlayerbotHolder::InsertBotLoading(ObjectGuid guid)
-{
-    std::scoped_lock lock(botLoadingMutex);
-    botLoading.insert(guid);
-}
-
-void PlayerbotHolder::EraseBotLoading(ObjectGuid guid)
-{
-    std::scoped_lock lock(botLoadingMutex);
-    botLoading.erase(guid);
-}
-
-uint32 PlayerbotHolder::GetBotLoadingCount() const
-{
-    std::scoped_lock lock(botLoadingMutex);
-    return static_cast<uint32>(botLoading.size());
-}
-
 void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId)
 {
     // bot is loading
-    if (IsBotLoading(playerGuid))
+    if (botLoading.find(playerGuid) != botLoading.end())
         return;
 
     // has bot already been added?
@@ -148,7 +125,7 @@ void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId
             LOG_DEBUG("playerbots", "PlayerbotMgr not found for master player with GUID: {}", masterPlayer->GetGUID().GetRawValue());
             return;
         }
-        uint32 count = mgr->GetPlayerbotsCount() + GetBotLoadingCount();
+        uint32 count = mgr->GetPlayerbotsCount() + botLoading.size();
         if (count >= sPlayerbotAIConfig->maxAddedBots)
         {
             allowed = false;
@@ -171,8 +148,8 @@ void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId
         return;
     }
 
-    InsertBotLoading(playerGuid);
-   
+    botLoading.insert(playerGuid);
+
     // Always login in with world session to avoid race condition
     sWorld->AddQueryHolderCallback(CharacterDatabase.DelayQueryHolder(holder))
         .AfterComplete([this](SQLQueryHolderBase const& holder)
@@ -203,7 +180,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder con
         LOG_DEBUG("mod-playerbots", "Bot player could not be loaded for account ID: {}", botAccountId);
         botSession->LogoutPlayer(true);
         delete botSession;
-        EraseBotLoading(holder.GetGuid());
+        botLoading.erase(holder.GetGuid());
         return;
     }
 
@@ -220,7 +197,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder con
     sRandomPlayerbotMgr->OnPlayerLogin(bot);
     OnBotLogin(bot);
 
-    EraseBotLoading(holder.GetGuid());
+    botLoading.erase(holder.GetGuid());
 }
 
 void PlayerbotHolder::UpdateSessions()
@@ -242,31 +219,12 @@ void PlayerbotHolder::UpdateSessions()
         }
     }
 
-    // logout/cancel enqueued players after handling the world packets
-    std::vector<PostedOp> localInbox;
-    {
-        std::lock_guard<std::mutex> lock(m_inboxMutex);
-        if (!m_inbox.empty())
-            localInbox.swap(m_inbox);
-    }
-    if (!localInbox.empty())
-    {
-        // Handle intend
-        for (PostedOp const& p : localInbox)
-        {
-            if (p.op == BotOp::Logout)
-                m_pendingLogout.insert(p.guid);
-            else  // Cancel
-                m_pendingLogout.erase(p.guid);
-        }
-    }
-
-    // safe execute
+    // logout enqueud players after handling the world packets
     if (!m_pendingLogout.empty())
     {
-        // Move to local vector before destructive work
-        std::vector<ObjectGuid> toLogout(m_pendingLogout.begin(), m_pendingLogout.end());
-        m_pendingLogout.clear();
+        // empty and move to local vector
+        std::vector<ObjectGuid> toLogout;
+        toLogout.swap(m_pendingLogout);
 
         for (ObjectGuid const& guid : toLogout)
             LogoutPlayerBot(guid);
@@ -291,11 +249,20 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
     }
 }
 
-void PlayerbotHolder::EnqueueLogoutAllBots()
+void PlayerbotHolder::LogoutAllBots()
 {
-    // Collect eligible GUIDs first (cheap & safe)
-    std::vector<ObjectGuid> guids;
-    guids.reserve(playerBots.size());
+    /*
+    while (true)
+    {
+        PlayerBotMap::const_iterator itr = GetPlayerBotsBegin();
+        if (itr == GetPlayerBotsEnd())
+            break;
+
+        Player* bot= itr->second;
+        if (!GET_PLAYERBOT_AI(bot)->IsRealPlayer())
+            LogoutPlayerBot(bot->GetGUID());
+    }
+    */
 
     PlayerBotMap bots = playerBots;
     for (auto& itr : bots)
@@ -308,12 +275,8 @@ void PlayerbotHolder::EnqueueLogoutAllBots()
         if (!botAI || botAI->IsRealPlayer())
             continue;
 
-        guids.push_back(itr.first);
+        LogoutPlayerBot(bot->GetGUID());
     }
-
-    // Post intents (thread-safe); actual teardown happens in UpdateSessions()
-    for (ObjectGuid const& guid : guids)
-        EnqueueLogout(guid);
 }
 
 void PlayerbotMgr::CancelLogout()
@@ -335,8 +298,6 @@ void PlayerbotMgr::CancelLogout()
             bot->GetSession()->HandleLogoutCancelOpcode(data);
             botAI->TellMaster("Logout cancelled!");
         }
-
-        EnqueueCancelLogout(bot->GetGUID());
     }
 
     for (PlayerBotMap::const_iterator it = sRandomPlayerbotMgr->GetPlayerBotsBegin();
@@ -355,21 +316,13 @@ void PlayerbotMgr::CancelLogout()
             WorldPackets::Character::LogoutCancel data = WorldPacket(CMSG_LOGOUT_CANCEL);
             bot->GetSession()->HandleLogoutCancelOpcode(data);
         }
-
-        EnqueueCancelLogout(bot->GetGUID());
     }
 }
 
-void PlayerbotHolder::EnqueueLogout(ObjectGuid guid)
+void PlayerbotHolder::EnqueueLogout(ObjectGuid playerGuid)
 {
-    std::lock_guard<std::mutex> lock(m_inboxMutex);
-    m_inbox.push_back({guid, BotOp::Logout});
-}
-
-void PlayerbotHolder::EnqueueCancelLogout(ObjectGuid guid)
-{
-    std::lock_guard<std::mutex> lock(m_inboxMutex);
-    m_inbox.push_back({guid, BotOp::Cancel});
+    if (std::find(m_pendingLogout.begin(), m_pendingLogout.end(), playerGuid) == m_pendingLogout.end())
+        m_pendingLogout.push_back(playerGuid);
 }
 
 void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
@@ -777,7 +730,7 @@ std::string const PlayerbotHolder::ProcessBotCommand(std::string const cmd, Obje
         if (!GetPlayerBot(guid))
             return "not your bot";
 
-        EnqueueLogout(guid); 
+        LogoutPlayerBot(guid);
         return "ok";
     }
 
@@ -1226,7 +1179,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
             // If the user requested a specific gender, skip any character that doesn't match.
             if (gender != -1 && GetOfflinePlayerGender(guid) != gender)
                 continue;
-            if (IsBotLoading(guid))
+            if (botLoading.find(guid) != botLoading.end())
                 continue;
             if (ObjectAccessor::FindConnectedPlayer(guid))
                 continue;
@@ -1602,7 +1555,7 @@ void PlayerbotMgr::HandleMasterIncomingPacket(WorldPacket const& packet)
         // if master is logging out, log out all bots
         case CMSG_LOGOUT_REQUEST:
         {
-            EnqueueLogoutAllBots();
+            LogoutAllBots();
             break;
         }
         // if master cancelled logout, cancel too

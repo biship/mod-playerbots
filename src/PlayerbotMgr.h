@@ -31,9 +31,7 @@ public:
     bool IsAccountLinked(uint32 accountId, uint32 masterAccountId);
     void HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder const& holder);
 
-    void EnqueueLogout(ObjectGuid guid); //thread-safe
-    void EnqueueCancelLogout(ObjectGuid guid); //thread-safe
-    void EnqueueLogoutAllBots();
+    void EnqueueLogout(ObjectGuid guid);
     void DisablePlayerBot(ObjectGuid guid);
     void RemoveFromPlayerbotsMap(ObjectGuid guid);
     Player* GetPlayerBot(ObjectGuid guid) const;
@@ -45,6 +43,7 @@ public:
     void UpdateSessions();
     void HandleBotPackets(WorldSession* session);
 
+    void LogoutAllBots();
     void OnBotLogin(Player* const bot);
 
     std::vector<std::string> HandlePlayerbotCommand(char const* args, Player* master = nullptr);
@@ -60,21 +59,9 @@ public:
 protected:
     virtual void OnBotLoginInternal(Player* const bot) = 0;
     PlayerBotMap playerBots;
-    void LogoutPlayerBot(ObjectGuid guid);
-
-private:
-    enum class BotOp : uint8 { Logout, Cancel };
-    struct PostedOp { ObjectGuid guid; BotOp op; };
-    std::mutex m_inboxMutex;
-    std::vector<PostedOp> m_inbox;
-    std::unordered_set<ObjectGuid> m_pendingLogout;
-
     std::unordered_set<ObjectGuid> botLoading;
-    std::mutex botLoadingMutex;
-    bool IsBotLoading(ObjectGuid guid) const; // thread-safe
-    void InsertBotLoading(ObjectGuid guid); // thread-safe
-    void EraseBotLoading(ObjectGuid guid); // thread-safe
-    uint32 GetBotLoadingCount() const; // thread-safe
+    std::vector<ObjectGuid> m_pendingLogout;
+    void LogoutPlayerBot(ObjectGuid guid);
 };
 
 class PlayerbotMgr : public PlayerbotHolder
