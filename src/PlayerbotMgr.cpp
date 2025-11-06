@@ -82,10 +82,34 @@ public:
     PlayerbotHolder* GetPlayerbotHolder() { return playerbotHolder; }
 };
 
+bool PlayerbotHolder::IsBotLoading(ObjectGuid guid) const
+{
+    std::scoped_lock lock(botLoadingMutex);
+    return botLoading.contains(guid);
+}
+
+void PlayerbotHolder::InsertBotLoading(ObjectGuid guid)
+{
+    std::scoped_lock lock(botLoadingMutex);
+    botLoading.insert(guid);
+}
+
+void PlayerbotHolder::EraseBotLoading(ObjectGuid guid)
+{
+    std::scoped_lock lock(botLoadingMutex);
+    botLoading.erase(guid);
+}
+
+uint32 PlayerbotHolder::GetBotLoadingCount() const
+{
+    std::scoped_lock lock(botLoadingMutex);
+    return static_cast<uint32>(botLoading.size());
+}
+
 void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId)
 {
     // bot is loading
-    if (botLoading.find(playerGuid) != botLoading.end())
+    if (IsBotLoading(playerGuid))
         return;
 
     // has bot already been added?
@@ -124,7 +148,7 @@ void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId
             LOG_DEBUG("playerbots", "PlayerbotMgr not found for master player with GUID: {}", masterPlayer->GetGUID().GetRawValue());
             return;
         }
-        uint32 count = mgr->GetPlayerbotsCount() + botLoading.size();
+        uint32 count = mgr->GetPlayerbotsCount() + GetBotLoadingCount();
         if (count >= sPlayerbotAIConfig->maxAddedBots)
         {
             allowed = false;
@@ -147,8 +171,8 @@ void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId
         return;
     }
 
-    botLoading.insert(playerGuid);
-
+    InsertBotLoading(playerGuid);
+   
     // Always login in with world session to avoid race condition
     sWorld->AddQueryHolderCallback(CharacterDatabase.DelayQueryHolder(holder))
         .AfterComplete([this](SQLQueryHolderBase const& holder)
@@ -179,7 +203,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder con
         LOG_DEBUG("mod-playerbots", "Bot player could not be loaded for account ID: {}", botAccountId);
         botSession->LogoutPlayer(true);
         delete botSession;
-        botLoading.erase(holder.GetGuid());
+        EraseBotLoading(holder.GetGuid());
         return;
     }
 
@@ -196,7 +220,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder con
     sRandomPlayerbotMgr->OnPlayerLogin(bot);
     OnBotLogin(bot);
 
-    botLoading.erase(holder.GetGuid());
+    EraseBotLoading(holder.GetGuid());
 }
 
 void PlayerbotHolder::UpdateSessions()
@@ -335,7 +359,6 @@ void PlayerbotMgr::CancelLogout()
         EnqueueCancelLogout(bot->GetGUID());
     }
 }
-
 
 void PlayerbotHolder::EnqueueLogout(ObjectGuid guid)
 {
@@ -1203,7 +1226,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
             // If the user requested a specific gender, skip any character that doesn't match.
             if (gender != -1 && GetOfflinePlayerGender(guid) != gender)
                 continue;
-            if (botLoading.find(guid) != botLoading.end())
+            if (IsBotLoading(guid))
                 continue;
             if (ObjectAccessor::FindConnectedPlayer(guid))
                 continue;

@@ -60,7 +60,6 @@ public:
 protected:
     virtual void OnBotLoginInternal(Player* const bot) = 0;
     PlayerBotMap playerBots;
-    std::unordered_set<ObjectGuid> botLoading;
     void LogoutPlayerBot(ObjectGuid guid);
 
 private:
@@ -69,6 +68,13 @@ private:
     std::mutex m_inboxMutex;
     std::vector<PostedOp> m_inbox;
     std::unordered_set<ObjectGuid> m_pendingLogout;
+
+    std::unordered_set<ObjectGuid> botLoading;
+    std::mutex botLoadingMutex;
+    bool IsBotLoading(ObjectGuid guid) const; // thread-safe
+    void InsertBotLoading(ObjectGuid guid); // thread-safe
+    void EraseBotLoading(ObjectGuid guid); // thread-safe
+    uint32 GetBotLoadingCount() const; // thread-safe
 };
 
 class PlayerbotMgr : public PlayerbotHolder
