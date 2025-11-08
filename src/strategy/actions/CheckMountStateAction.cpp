@@ -129,7 +129,6 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         // Use target-based logic if bot is in combat OR master is in combat and needs assistance
         float dismountDistance = CalculateDismountDistance();
         float mountDistance = CalculateMountDistance();
-        float combatReach = bot->GetCombatReach() + currentTarget->GetCombatReach();
         float distanceToTarget = bot->GetExactDist(currentTarget);
 
         shouldDismount = (distanceToTarget <= dismountDistance);
