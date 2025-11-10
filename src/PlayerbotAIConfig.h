@@ -381,6 +381,7 @@ public:
     bool keepAltsInGroup = false;
     bool KeepAltsInGroup() const { return keepAltsInGroup; }
     bool allowSummonInCombat;
+    bool enableAltRoaming;
     bool allowSummonWhenMasterIsDead;
     bool allowSummonWhenBotIsDead;
     int reviveBotWhenSummoned;

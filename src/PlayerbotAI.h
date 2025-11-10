@@ -539,7 +539,10 @@ public:
     bool HasActivePlayerMaster();
     // Get the group leader or the master of the bot.
     // Checks if the bot is summoned as alt of a player
-    bool IsAlt();
+    bool IsAlt(){return isAlt;}
+    void SetAlt(bool isALtflag) {isAlt=isALtflag;}
+    void SetAltMaster(Player*master) {altMaster=master;}
+    Player* GetAltMaster(){return altMaster;}
     Player* GetGroupMaster();
     // Returns a semi-random (cycling) number that is fixed for each bot.
     uint32 GetFixedBotNumer(uint32 maxNum = 100, float cyclePerMin = 1);
@@ -621,6 +624,8 @@ private:
 protected:
     Player* bot;
     Player* master;
+    Player* altMaster = nullptr;
+    bool isAlt = false;
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

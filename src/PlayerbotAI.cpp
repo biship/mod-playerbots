@@ -367,11 +367,14 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
 {
     if (!bot)
         return;
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return;
     Group* group = bot->GetGroup();
     // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
     if (!group)
     {
-        if (master && sRandomPlayerbotMgr->IsRandomBot(bot))
+        if (master && (sRandomPlayerbotMgr->IsRandomBot(bot) || (botAI->IsAlt() && sPlayerbotAIConfig->enableAltRoaming)))
         {
             SetMaster(nullptr);
             Reset(true);
@@ -381,10 +384,6 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
     }
 
     if (bot->InBattleground() && bot->GetBattleground()->GetBgTypeID() != BATTLEGROUND_AV)
-        return;
-
-    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-    if (!botAI)
         return;
 
     PlayerbotAI* masterBotAI = nullptr;
@@ -4122,8 +4121,6 @@ bool PlayerbotAI::HasRealPlayerMaster()
 }
 
 bool PlayerbotAI::HasActivePlayerMaster() { return master && !GET_PLAYERBOT_AI(master); }
-
-bool PlayerbotAI::IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr->IsRandomBot(bot); }
 
 Player* PlayerbotAI::GetGroupMaster()
 {
