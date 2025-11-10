@@ -1235,7 +1235,7 @@ AiPlayerbot.MaxRandomBotTeleportInterval = 18000
 
 # Number of seconds bots flagged as permanent stay in the world (31,104,000 ≈ 1 year)
 # Default: 31104000
-AiPlayerbot.PermanantlyInWorldTime = 31104000
+AiPlayerbot.PermanentlyInWorldTime = 31104000
 
 #
 #
