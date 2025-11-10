@@ -227,6 +227,12 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
     {
         OpcodeClient opcode = static_cast<OpcodeClient>(packet->GetOpcode());
         ClientOpcodeHandler const* opHandle = opcodeTable[opcode];
+        if (!opHandle)
+        {
+            LOG_ERROR("playerbots", "Unhandled opcode {} queued for bot session {}. Packet dropped.", static_cast<uint32>(opcode), session->GetAccountId());
+            delete packet;
+            continue;
+        }
         opHandle->Call(session, *packet);
         delete packet;
     }
@@ -514,7 +520,7 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
 
         if (!groupValid)
         {
-            bot->RemoveFromGroup();
+            botAI->LeaveOrDisbandGroup();
         }
     }
 
@@ -1730,7 +1736,8 @@ PlayerbotAI* PlayerbotsMgr::GetPlayerbotAI(Player* player)
     {
         return nullptr;
     }
-    // if (player->GetSession()->isLogingOut() || player->IsDuringRemoveFromWorld()) {
+    // if (player->GetSession()->isLogingOut() || player->IsDuringRemoveFromWorld())
+    // {
     //     return nullptr;
     // }
     auto itr = _playerbotsAIMap.find(player->GetGUID());
