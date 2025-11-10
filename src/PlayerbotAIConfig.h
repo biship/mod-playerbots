@@ -380,6 +380,7 @@ public:
     int32 groupInvitationPermission;
     bool keepAltsInGroup = false;
     bool KeepAltsInGroup() const { return keepAltsInGroup; }
+    bool enableAltRoaming;
     bool allowSummonInCombat;
     bool enableAltRoaming;
     bool allowSummonWhenMasterIsDead;
