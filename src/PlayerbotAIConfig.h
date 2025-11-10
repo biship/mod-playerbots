@@ -346,6 +346,7 @@ public:
     bool allowBoENeedIfUpgrade;  // Loot roll fine-tuning
     bool allowBoUNeedIfUpgrade;  // Allow NEED on BoU if upgrade
     float crossArmorExtraMargin;
+    bool crossArmorGreedIsPass;  // If true, off-armor (lower tier) GREED becomes PASS
     bool useDEButton;              // Allow "Disenchant" on NBG if available
     float tokenILevelMargin;       // ilvl threshold to consider the token an upgrade
     bool smartNeedBySpec;          // Intelligent NEED (based on stats/spec)

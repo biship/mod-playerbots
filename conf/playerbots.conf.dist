@@ -331,6 +331,12 @@ AiPlayerbot.Roll.Recipes.IgnoreSkillRank = 0
 # Default: 1.20 (conservative). Use 9.99 to effectively forbid cross-armor NEED.
 AiPlayerbot.Roll.CrossArmorExtraMargin = 1.20
 
+# Cross-armor policy: when an off-armor (lower tier) item is not primary, should bots PASS instead of GREED?
+# false (0): cross-armor -> GREED (default, legacy behavior)
+# true (1): cross-armor -> PASS (bots won't roll at all on off-armor)
+# Default: 0 (false)
+AiPlayerbot.Roll.CrossArmorGreedIsPass = 0
+
 # Minimum item level delta to treat a SET TOKEN as a real upgrade (0 means >=).
 # Prevents NEED on same-tier duplicates.
 # Example: Paladin Prot with chest ilvl 232:

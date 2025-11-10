@@ -100,6 +100,76 @@ static SpecTraits GetSpecTraits(Player* bot)
     return t;
 }
 
+// Return true if the invType is a "body armor" slot (not jewelry/cape/weapon/shield/relic/holdable)
+static bool IsBodyArmorInvType(uint8 invType)
+{
+    switch (invType)
+    {
+        case INVTYPE_HEAD:
+        case INVTYPE_SHOULDERS:
+        case INVTYPE_CHEST:
+        case INVTYPE_ROBE:
+        case INVTYPE_WAIST:
+        case INVTYPE_LEGS:
+        case INVTYPE_FEET:
+        case INVTYPE_WRISTS:
+        case INVTYPE_HANDS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Preferred armor subclass (ITEM_SUBCLASS_ARMOR_*) for the bot (WotLK rules)
+static uint8 PreferredArmorSubclassFor(Player* bot)
+{
+    if (!bot)
+        return ITEM_SUBCLASS_ARMOR_CLOTH;
+
+    uint8 cls = bot->getClass();
+    uint32 lvl = bot->GetLevel();
+
+    // Pure cloth classes
+    if (cls == CLASS_MAGE || cls == CLASS_PRIEST || cls == CLASS_WARLOCK)
+        return ITEM_SUBCLASS_ARMOR_CLOTH;
+
+    // Leather forever
+    if (cls == CLASS_DRUID || cls == CLASS_ROGUE)
+        return ITEM_SUBCLASS_ARMOR_LEATHER;
+
+    // Hunter / Shaman: <40 leather, >=40 mail
+    if (cls == CLASS_HUNTER || cls == CLASS_SHAMAN)
+        return (lvl >= 40u) ? ITEM_SUBCLASS_ARMOR_MAIL : ITEM_SUBCLASS_ARMOR_LEATHER;
+
+    // Warrior / Paladin: <40 mail, >=40 plate
+    if (cls == CLASS_WARRIOR || cls == CLASS_PALADIN)
+        return (lvl >= 40u) ? ITEM_SUBCLASS_ARMOR_PLATE : ITEM_SUBCLASS_ARMOR_MAIL;
+
+    // Death Knight: plate from the start
+    if (cls == CLASS_DEATH_KNIGHT)
+        return ITEM_SUBCLASS_ARMOR_PLATE;
+
+    return ITEM_SUBCLASS_ARMOR_CLOTH;
+}
+
+// True if the item is a body armor piece of a strictly lower tier than preferred (cloth<leather<mail<plate)
+static bool IsLowerTierArmorForBot(Player* bot, ItemTemplate const* proto)
+{
+    if (!bot || !proto)
+        return false;
+    if (proto->Class != ITEM_CLASS_ARMOR)
+        return false;
+    if (!IsBodyArmorInvType(proto->InventoryType))
+        return false; // ignore jewelry/capes/etc.
+    // Shields / relics / holdables are not considered here
+    if (proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD || proto->InventoryType == INVTYPE_RELIC || proto->InventoryType == INVTYPE_HOLDABLE)
+        return false;
+
+    uint8 preferred = PreferredArmorSubclassFor(bot);
+    // ITEM_SUBCLASS_ARMOR_* are ordered Cloth(1) < Leather(2) < Mail(3) < Plate(4) on 3.3.5a
+    return proto->SubClass < preferred;
+}
+
 // Local helper: identifies classic lockboxes the Rogue can pick.
 // Keep English-only fallback for name checks.
 static bool IsLockbox(ItemTemplate const* proto)
@@ -627,6 +697,15 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
                            proto->InventoryType == INVTYPE_NECK || proto->InventoryType == INVTYPE_CLOAK;
 
     const SpecTraits traits = GetSpecTraits(bot);
+
+    // HARD GUARD: never consider lower-tier armor as "primary" for the spec (body armor only)
+    if (!isJewelry && proto->Class == ITEM_CLASS_ARMOR && IsBodyArmorInvType(proto->InventoryType))
+    {
+        if (IsLowerTierArmorForBot(bot, proto))
+        {
+            return false; // forces NEED->GREED earlier when SmartNeedBySpec is enabled
+        }
+    }
 
     // Hard filter first: do not NEED weapons/shields/relics the class shouldn't use.
     // If this returns false, the caller will downgrade to GREED (off-spec/unsupported).
@@ -1227,6 +1306,13 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
                 vote = PASS;
                 break;
         }
+    }
+
+    // Policy: turn GREED into PASS on off-armor (lower tier) if configured
+    if (vote == GREED && proto->Class == ITEM_CLASS_ARMOR && sPlayerbotAIConfig->crossArmorGreedIsPass)
+    {
+        if (IsLowerTierArmorForBot(bot, proto))
+            vote = PASS;
     }
 
     // Lockboxes: if the item is a lockbox and the bot is a Rogue with Lockpicking, prefer NEED.
