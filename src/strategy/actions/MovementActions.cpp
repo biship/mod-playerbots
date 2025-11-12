@@ -978,14 +978,14 @@ void MovementAction::UpdateMovementState()
     const auto master = botAI ? botAI->GetMaster() : nullptr;  // real or not
     const bool masterIsFlying = master && master->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
     const bool isFlying = bot->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
-    const auto liquidState = bot->GetLiquidData().Status; // default LIQUID_MAP_NO_WATER
+    const auto liquidState = bot->GetLiquidData().Status;  // default LIQUID_MAP_NO_WATER
     const bool isWaterArea = liquidState != LIQUID_MAP_NO_WATER;
     const bool isUnderWater = liquidState == LIQUID_MAP_UNDER_WATER;
     const bool isInWater = liquidState == LIQUID_MAP_IN_WATER;
     const bool isWaterWalking = bot->HasUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
     const bool isSwimming = bot->HasUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
     const bool wantsToWaterWalk = bot->HasWaterWalkAura();
-    const bool wantsToSwim =  isInWater || isUnderWater;
+    const bool wantsToSwim = isInWater || isUnderWater;
 
     // handle water state
     if (isWaterArea)
@@ -1025,7 +1025,7 @@ void MovementAction::UpdateMovementState()
         bot->RemoveUnitMovementFlag(MOVEMENTFLAG_FLYING);
         bot->SendMovementFlagUpdate();
     }
-    
+
     // See if the bot is currently slowed, rooted, or otherwise unable to move
     bool isCurrentlyRestricted = bot->isFrozen() || bot->IsPolymorphed() || bot->HasRootAura() || bot->HasStunAura() ||
                                  bot->HasConfuseAura() || bot->HasUnitState(UNIT_STATE_LOST_CONTROL);
@@ -1837,7 +1837,8 @@ void MovementAction::DoMovePoint(Unit* unit, float x, float y, float z, bool gen
     {
         float gLvlZ = unit->GetMapWaterOrGroundLevel(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
         unit->UpdatePosition(unit->GetPositionX(), unit->GetPositionY(), gLvlZ, false);
-        //z = gLvlZ; do not overwrite Z axex, otherwise you wont be able to steer the bots into swimming when water walking.
+        // z = gLvlZ; do not overwrite Z axex, otherwise you wont be able to steer the bots into swimming when water
+        // walking.
     }
 
     mm->Clear();
@@ -2123,8 +2124,8 @@ Position MovementAction::BestPositionForMeleeToFlee(Position pos, float radius)
     if (currentTarget)
     {
         // Normally, move to left or right is the best position
-        bool isTanking =
-            (!currentTarget->isFrozen() && !currentTarget->HasRootAura()) && (currentTarget->GetVictim() == bot);
+        bool isTanking = (!currentTarget->isFrozen()
+            && !currentTarget->HasRootAura()) && (currentTarget->GetVictim() == bot);
         float angle = bot->GetAngle(currentTarget);
         float angleLeft = angle + (float)M_PI / 2;
         float angleRight = angle - (float)M_PI / 2;
@@ -2540,9 +2541,7 @@ bool RearFlankAction::isUseful()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target)
-    {
         return false;
-    }
 
     // Need to double the front angle check to account for mirrored angle.
     bool inFront = target->HasInArc(2.f * minAngle, bot);
@@ -2557,9 +2556,7 @@ bool RearFlankAction::Execute(Event event)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target)
-    {
         return false;
-    }
 
     float angle = frand(minAngle, maxAngle);
     float baseDistance = bot->GetMeleeRange(target) * 0.5f;
