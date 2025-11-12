@@ -981,7 +981,7 @@ void MovementAction::UpdateMovementState()
     const auto liquidState = bot->GetLiquidData().Status; // default LIQUID_MAP_NO_WATER
     const bool isWaterArea = liquidState != LIQUID_MAP_NO_WATER;
     const bool isUnderWater = liquidState == LIQUID_MAP_UNDER_WATER;
-    const bool isInWater = liquidState == LIQUID_MAP_UNDER_WATER;
+    const bool isInWater = liquidState == LIQUID_MAP_IN_WATER;
     const bool isWaterWalking = bot->HasUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
     const bool isSwimming = bot->HasUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
     const bool wantsToWaterWalk = bot->HasWaterWalkAura();
@@ -998,7 +998,7 @@ void MovementAction::UpdateMovementState()
             bot->SendMovementFlagUpdate();
         }
         // swimming
-        else if (wantsToSwim && !isSwimming && !isWaterWalking && !isFlying)
+        else if (wantsToSwim && !isSwimming && !wantsToWaterWalk && !isFlying)
         {
             bot->RemoveUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
             bot->AddUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
