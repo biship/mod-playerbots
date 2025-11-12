@@ -192,14 +192,16 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
     {
         return false;
     }
+
     bool generatePath = !bot->IsFlying() && !bot->isSwimming();
-    bool disableMoveSplinePath = sPlayerbotAIConfig->disableMoveSplinePath >= 2 ||
-                                 (sPlayerbotAIConfig->disableMoveSplinePath == 1 && bot->InBattleground());
+    bool disableMoveSplinePath =
+        sPlayerbotAIConfig->disableMoveSplinePath >= 2 ||
+        (sPlayerbotAIConfig->disableMoveSplinePath == 1 && bot->InBattleground());
     if (Vehicle* vehicle = bot->GetVehicle())
     {
         VehicleSeatEntry const* seat = vehicle->GetSeatForPassenger(bot);
         Unit* vehicleBase = vehicle->GetBase();
-        generatePath = !vehicleBase || vehicleBase->CanFly() || vehicleBase->CanSwim();
+        generatePath = !vehicleBase || !vehicleBase->CanFly();
         if (!vehicleBase || !seat || !seat->CanControl())  // is passenger and cant move anyway
             return false;
 
@@ -250,9 +252,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         Movement::PointsArray path =
             SearchForBestPath(x, y, z, modifiedZ, sPlayerbotAIConfig->maxMovementSearchTime, normal_only);
         if (modifiedZ == INVALID_HEIGHT)
-        {
             return false;
-        }
         float distance = bot->GetExactDist(x, y, modifiedZ);
         if (distance > 0.01f)
         {
@@ -482,7 +482,8 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
     //         {
     //             AI_VALUE(LastMovement&, "last area trigger").lastAreaTrigger = entry;
     //         }
-    //         else {
+    //         else
+    //         {
     //             LOG_DEBUG("playerbots", "!entry");
     //             return bot->TeleportTo(movePosition.getMapId(), movePosition.getX(), movePosition.getY(),
     //             movePosition.getZ(), movePosition.getO(), 0);
@@ -532,9 +533,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
     //             bool goTaxi = bot->ActivateTaxiPathTo({ tEntry->from, tEntry->to }, unit, 1);
 
     //             if (botAI->HasCheat(BotCheatMask::gold))
-    //             {
     //                 bot->SetMoney(botMoney);
-    //             }
     //             LOG_DEBUG("playerbots", "goTaxi");
     //             return goTaxi;
     //         }
@@ -961,7 +960,8 @@ bool MovementAction::IsMovingAllowed()
         return false;
     }
 
-    // if (bot->HasUnitMovementFlag(MOVEMENTFLAG_FALLING)) {
+    // if (bot->HasUnitMovementFlag(MOVEMENTFLAG_FALLING))
+    // {
     //     return false;
     // }
     return bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != FLIGHT_MOTION_TYPE;
@@ -971,44 +971,61 @@ bool MovementAction::Follow(Unit* target, float distance) { return Follow(target
 
 void MovementAction::UpdateMovementState()
 {
-    bool isFlying = bot->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
-    int8 botInLiquidState = bot->GetLiquidData().Status;
-    bool isSwimming = botInLiquidState == LIQUID_MAP_IN_WATER || botInLiquidState == LIQUID_MAP_UNDER_WATER;
+    // state flags
+    const float gLvlZ = bot->GetMapWaterOrGroundLevel(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+    const bool onGround = bot->GetPositionZ() < gLvlZ + 1.f;
+    const bool wantsToFly = bot->HasIncreaseMountedFlightSpeedAura() || bot->HasFlyAura();
+    const auto master = botAI ? botAI->GetMaster() : nullptr;  // real or not
+    const bool masterIsFlying = master && master->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
+    const bool isFlying = bot->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
+    const auto liquidState = bot->GetLiquidData().Status; // default LIQUID_MAP_NO_WATER
+    const bool isWaterArea = liquidState != LIQUID_MAP_NO_WATER;
+    const bool isUnderWater = liquidState == LIQUID_MAP_UNDER_WATER;
+    const bool isInWater = liquidState == LIQUID_MAP_UNDER_WATER;
+    const bool isWaterWalking = bot->HasUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
+    const bool isSwimming = bot->HasUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
+    const bool wantsToWaterWalk = bot->HasWaterWalkAura();
+    const bool wantsToSwim =  isInWater || isUnderWater;
 
-    // swimming state
-    bot->SetSwim(isSwimming && !isFlying);
-
-    // flying state
-    if (!isSwimming)
+    // handle water state
+    if (isWaterArea)
     {
-        float groundLevel = bot->GetMapWaterOrGroundLevel(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
-        bool onGround = bot->GetPositionZ() < groundLevel + 1.f;
-        bool wantsToFly = bot->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) || bot->HasAuraType(SPELL_AURA_FLY);
-        bool isFlying = bot->HasUnitMovementFlag(MOVEMENTFLAG_FLYING);
-        bool masterIsFlying = false;
-        if (botAI && botAI->HasRealPlayerMaster())
+        // water walking
+        if (wantsToWaterWalk && !isWaterWalking && !isUnderWater && !isFlying)
         {
-            masterIsFlying = botAI->GetMaster()->HasUnitMovementFlag(MOVEMENTFLAG_FLYING) &&
-                             (botAI->GetMaster()->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) ||
-                              botAI->GetMaster()->HasAuraType(SPELL_AURA_FLY));
-        }
-
-        if (!isFlying && wantsToFly && masterIsFlying)
-        {
-            bot->AddUnitMovementFlag(MOVEMENTFLAG_CAN_FLY);
-            bot->AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
-            bot->AddUnitMovementFlag(MOVEMENTFLAG_FLYING);
+            bot->RemoveUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
+            bot->AddUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
             bot->SendMovementFlagUpdate();
         }
-        else if (isFlying && (!wantsToFly || (onGround && !masterIsFlying)))
+        // swimming
+        else if (wantsToSwim && !isSwimming && !isWaterWalking && !isFlying)
         {
-            bot->RemoveUnitMovementFlag(MOVEMENTFLAG_CAN_FLY);
-            bot->RemoveUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
-            bot->RemoveUnitMovementFlag(MOVEMENTFLAG_FLYING);
+            bot->RemoveUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
+            bot->AddUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
             bot->SendMovementFlagUpdate();
         }
     }
+    else
+    {
+        // reset flags, if not will inherit incorrect walk speed here and there
+        // when transistions between land and water.
+        bot->RemoveUnitMovementFlag(MOVEMENTFLAG_SWIMMING);
+        bot->RemoveUnitMovementFlag(MOVEMENTFLAG_WATERWALKING);
+        bot->SendMovementFlagUpdate();
+    }
 
+    // handle flying state
+    if (wantsToFly && !isFlying && masterIsFlying)
+    {
+        bot->AddUnitMovementFlag(MOVEMENTFLAG_FLYING);
+        bot->SendMovementFlagUpdate();
+    }
+    else if ((!wantsToFly || onGround) && isFlying)
+    {
+        bot->RemoveUnitMovementFlag(MOVEMENTFLAG_FLYING);
+        bot->SendMovementFlagUpdate();
+    }
+    
     // See if the bot is currently slowed, rooted, or otherwise unable to move
     bool isCurrentlyRestricted = bot->isFrozen() || bot->IsPolymorphed() || bot->HasRootAura() || bot->HasStunAura() ||
                                  bot->HasConfuseAura() || bot->HasUnitState(UNIT_STATE_LOST_CONTROL);
@@ -1024,9 +1041,12 @@ void MovementAction::UpdateMovementState()
     wasMovementRestricted = isCurrentlyRestricted;
 
     // Temporary speed increase in group
-    // if (botAI->HasRealPlayerMaster()) {
+    // if (botAI->HasRealPlayerMaster())
+    // {
     //     bot->SetSpeedRate(MOVE_RUN, 1.1f);
-    // } else {
+    // }
+    // else
+    // {
     //     bot->SetSpeedRate(MOVE_RUN, 1.0f);
     // }
     // check if target is not reachable (from Vmangos)
@@ -1035,7 +1055,7 @@ void MovementAction::UpdateMovementState()
     // {
     //     if (Unit* pTarget = sServerFacade->GetChaseTarget(bot))
     //     {
-    //         if (!bot->IsWithinMeleeRange(pTarget) && pTarget->GetTypeId() == TYPEID_UNIT)
+    //         if (!bot->IsWithinMeleeRange(pTarget) && pTarget->IsCreature())
     //         {
     //             float angle = bot->GetAngle(pTarget);
     //             float distance = 5.0f;
@@ -1663,7 +1683,8 @@ bool MovementAction::MoveInside(uint32 mapId, float x, float y, float z, float d
 // float MovementAction::SearchBestGroundZForPath(float x, float y, float z, bool generatePath, float range, bool
 // normal_only, float step)
 // {
-//     if (!generatePath) {
+//     if (!generatePath)
+//     {
 //         return z;
 //     }
 //     float min_length = 100000.0f;
@@ -1674,10 +1695,12 @@ bool MovementAction::MoveInside(uint32 mapId, float x, float y, float z, float d
 //         modified_z = bot->GetMapWaterOrGroundLevel(x, y, z + delta);
 //         PathGenerator gen(bot);
 //         gen.CalculatePath(x, y, modified_z);
-//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length) {
+//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length)
+//         {
 //             min_length = gen.getPathLength();
 //             current_z = modified_z;
-//             if (abs(current_z - z) < 0.5f) {
+//             if (abs(current_z - z) < 0.5f)
+//             {
 //                 return current_z;
 //             }
 //         }
@@ -1686,30 +1709,34 @@ bool MovementAction::MoveInside(uint32 mapId, float x, float y, float z, float d
 //         modified_z = bot->GetMapWaterOrGroundLevel(x, y, z + delta);
 //         PathGenerator gen(bot);
 //         gen.CalculatePath(x, y, modified_z);
-//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length) {
+//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length)
+//         {
 //             min_length = gen.getPathLength();
 //             current_z = modified_z;
-//             if (abs(current_z - z) < 0.5f) {
+//             if (abs(current_z - z) < 0.5f)
 //                 return current_z;
-//             }
 //         }
 //     }
 //     for (delta = range / 2 + step; delta <= range; delta += 2) {
 //         modified_z = bot->GetMapWaterOrGroundLevel(x, y, z + delta);
 //         PathGenerator gen(bot);
 //         gen.CalculatePath(x, y, modified_z);
-//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length) {
+//         if (gen.GetPathType() == PATHFIND_NORMAL && gen.getPathLength() < min_length)
+//         {
 //             min_length = gen.getPathLength();
 //             current_z = modified_z;
-//             if (abs(current_z - z) < 0.5f) {
+//             if (abs(current_z - z) < 0.5f)
+//             {
 //                 return current_z;
 //             }
 //         }
 //     }
-//     if (current_z == INVALID_HEIGHT && normal_only) {
+//     if (current_z == INVALID_HEIGHT && normal_only)
+//     {
 //         return INVALID_HEIGHT;
 //     }
-//     if (current_z == INVALID_HEIGHT && !normal_only) {
+//     if (current_z == INVALID_HEIGHT && !normal_only)
+//     {
 //         return z;
 //     }
 //     return current_z;
@@ -1793,10 +1820,29 @@ void MovementAction::DoMovePoint(Unit* unit, float x, float y, float z, bool gen
     if (!mm)
         return;
 
+    // enable flying
+    if (unit->HasUnitMovementFlag(MOVEMENTFLAG_FLYING))
+    {
+        unit->AddUnitMovementFlag(MOVEMENTFLAG_CAN_FLY);
+        unit->AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+    }
+    else
+    {
+        unit->RemoveUnitMovementFlag(MOVEMENTFLAG_CAN_FLY);
+        unit->RemoveUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+    }
+
+    // enable water walking
+    if (unit->HasUnitMovementFlag(MOVEMENTFLAG_WATERWALKING))
+    {
+        float gLvlZ = unit->GetMapWaterOrGroundLevel(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+        unit->UpdatePosition(unit->GetPositionX(), unit->GetPositionY(), gLvlZ, false);
+        //z = gLvlZ; do not overwrite Z axex, otherwise you wont be able to steer the bots into swimming when water walking.
+    }
+
     mm->Clear();
     if (backwards)
     {
-        // No "backwards takeoff"; if flying, force an air spline by disabling path gen.
         mm->MovePointBackwards(
             /*id*/ 0,
             /*coords*/ x, y, z,
@@ -2807,7 +2853,7 @@ bool MoveAwayFromCreatureAction::Execute(Event event)
 
     // Find all creatures with the specified Id
     std::vector<Unit*> creatures;
-    for (const auto& guid : targets)
+    for (auto const& guid : targets)
     {
         Unit* unit = botAI->GetUnit(guid);
         if (unit && (alive && unit->IsAlive()) && unit->GetEntry() == creatureId)
