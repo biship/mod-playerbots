@@ -36,8 +36,14 @@ static bool CompareSpells(SpellListEntry const& lhs, SpellListEntry const& rhs)
     uint32 rhsKey = rhsInfo->SchoolMask;
 
     if (lhsKey == rhsKey)
-        return std::strcmp(lhsInfo->SpellName[0], rhsInfo->SpellName[0]) > 0;
+    {
+        // Defensive check: if DBC data is broken and spell names are nullptr,
+        // fall back to id ordering instead of risking a crash in std::strcmp.
+        if (!lhsInfo->SpellName[0] || !rhsInfo->SpellName[0])
+            return lhs.first < rhs.first;
 
+        return std::strcmp(lhsInfo->SpellName[0], rhsInfo->SpellName[0]) > 0;
+    }
     return lhsKey > rhsKey;
 }
 
