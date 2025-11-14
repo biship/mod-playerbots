@@ -12,6 +12,7 @@
 #include "RTSCValues.h"
 #include "RtscAction.h"
 #include "PositionValue.h"
+#include "ByteBuffer.h" // For ByteBufferException and safe RTSC WorldPacket parsing
 
 Creature* SeeSpellAction::CreateWps(Player* wpOwner, float x, float y, float z, float o, uint32 entry, Creature* lastWp,
                                     bool important)
@@ -36,8 +37,26 @@ bool SeeSpellAction::Execute(Event event)
     uint8 castCount, castFlags;
     Player* master = botAI->GetMaster();
 
+    // Reset read position to start of the RTSC payload before decoding it
     p.rpos(0);
-    p >> castCount >> spellId >> castFlags;
+
+    // RTSC header = castCount (uint8) + spellId (uint32) + castFlags (uint8)
+    uint32 const rtscHeaderSize = sizeof(uint8) + sizeof(uint32) + sizeof(uint8);
+
+    // Prevent out-of-bounds reads when the RTSC packet is empty or truncated
+    if (p.size() < rtscHeaderSize)
+        return false;
+
+    try
+    {
+        // Protect header deserialization from ByteBufferException on malformed RTSC packets
+        p >> castCount >> spellId >> castFlags;
+    }
+    catch (ByteBufferException const&)
+    {
+        // Abort safely instead of letting the exception crash the map thread
+        return false;
+    }
 
     if (!master)
         return false;
@@ -51,7 +70,25 @@ bool SeeSpellAction::Execute(Event event)
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
     SpellCastTargets targets;
-    targets.Read(p, botAI->GetMaster());
+
+    //WorldPosition spellPosition(master->GetMapId(), targets.GetDst()->_position);
+
+    try
+    {
+        // Guard SpellCastTargets deserialization to avoid exceptions on truncated RTSC payloads
+        targets.Read(p, botAI->GetMaster());
+    }
+    catch (ByteBufferException const&)
+    {
+        // Stop processing gracefully if the RTSC payload does not contain full targets data
+        return false;
+    }
+
+    if (!targets.GetDst())
+    {
+        // Do not dereference a null destination; ignore malformed RTSC packets instead of crashing
+        return false;
+    }
 
     WorldPosition spellPosition(master->GetMapId(), targets.GetDst()->_position);
     SET_AI_VALUE(WorldPosition, "see spell location", spellPosition);
