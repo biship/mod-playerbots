@@ -11,53 +11,40 @@
 std::map<uint32, SkillLineAbilityEntry const*> ListSpellsAction::skillSpells;
 std::set<uint32> ListSpellsAction::vendorItems;
 
-bool CompareSpells(const std::pair<uint32, std::string>& s1, const std::pair<uint32, std::string>& s2)
+// Lightweight alias for a single entry in the spell list used below.
+
+// CHANGE: keep declaration explicit to improve readability of signatures.
+using SpellListEntry = std::pair<uint32, std::string>;
+
+// CHANGE: Simplified and cheap comparator used in MapUpdater worker thread.
+// It now avoids scanning the entire SkillLineAbilityStore for each comparison
+// and only relies on spell school and spell name to keep sorting fast and bounded.
+// lhs = the left element, rhs = the right element.
+static bool CompareSpells(SpellListEntry const& lhs, SpellListEntry const& rhs)
 {
-    SpellInfo const* si1 = sSpellMgr->GetSpellInfo(s1.first);
-    SpellInfo const* si2 = sSpellMgr->GetSpellInfo(s2.first);
-    if (!si1 || !si2)
+    SpellInfo const* lhsInfo = sSpellMgr->GetSpellInfo(lhs.first);
+    SpellInfo const* rhsInfo = sSpellMgr->GetSpellInfo(rhs.first);
+
+    if (!lhsInfo || !rhsInfo)
     {
-        LOG_ERROR("playerbots", "SpellInfo missing. {} {}", s1.first, s2.first);
-        return false;
-    }
-    uint32 p1 = si1->SchoolMask * 20000;
-    uint32 p2 = si2->SchoolMask * 20000;
-
-    uint32 skill1 = 0, skill2 = 0;
-    uint32 skillValue1 = 0, skillValue2 = 0;
-    for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
-    {
-        if (SkillLineAbilityEntry const* skillLine = sSkillLineAbilityStore.LookupEntry(j))
-        {
-            if (skillLine->Spell == s1.first)
-            {
-                skill1 = skillLine->SkillLine;
-                skillValue1 = skillLine->TrivialSkillLineRankLow;
-            }
-
-            if (skillLine->Spell == s2.first)
-            {
-                skill2 = skillLine->SkillLine;
-                skillValue2 = skillLine->TrivialSkillLineRankLow;
-            }
-        }
-
-        if (skill1 && skill2)
-            break;
+        LOG_ERROR("playerbots", "SpellInfo missing. {} {}", lhs.first, rhs.first);
+        // Fallback: order by spell id to keep comparator strict and deterministic.
+        return lhs.first < rhs.first;
     }
 
-    p1 += skill1 * 500;
-    p2 += skill2 * 500;
+    uint32 lhsKey = lhsInfo->SchoolMask;
+    uint32 rhsKey = rhsInfo->SchoolMask;
 
-    p1 += skillValue1;
-    p2 += skillValue2;
-
-    if (p1 == p2)
+    if (lhsKey == rhsKey)
     {
-        return strcmp(si1->SpellName[0], si2->SpellName[0]) > 0;
-    }
+        // Defensive check: if DBC data is broken and spell names are nullptr,
+        // fall back to id ordering instead of risking a crash in std::strcmp.
+        if (!lhsInfo->SpellName[0] || !rhsInfo->SpellName[0])
+            return lhs.first < rhs.first;
 
-    return p1 > p2;
+        return std::strcmp(lhsInfo->SpellName[0], rhsInfo->SpellName[0]) > 0;
+    }
+    return lhsKey > rhsKey;
 }
 
 std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::string filter)
@@ -99,13 +86,15 @@ std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::
         skill = chat->parseSkill(ss[0]);
         if (skill != SKILL_NONE)
         {
-            filter = ss.size() > 1 ? filter = ss[1] : "";
+            filter = ss.size() > 1 ? ss[1] : "";
         }
 
-        if (ss[0] == "first" && ss[1] == "aid")
+        // CHANGE: Guard access to ss[1]/ss[2] to avoid out-of-bounds
+        // when the player only types "first" without "aid".
+        if (ss[0] == "first" && ss.size() > 1 && ss[1] == "aid")
         {
             skill = SKILL_FIRST_AID;
-            filter = ss.size() > 2 ? filter = ss[2] : "";
+            filter = ss.size() > 2 ? ss[2] : "";
         }
     }
 
@@ -115,26 +104,55 @@ std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::
 
     uint32 minLevel = 0;
     uint32 maxLevel = 0;
-    if (filter.find("-") != std::string::npos)
+    if (filter.find('-') != std::string::npos)
     {
         std::vector<std::string> ff = split(filter, '-');
-        minLevel = atoi(ff[0].c_str());
-        maxLevel = atoi(ff[1].c_str());
-        filter = "";
+        if (ff.size() >= 2)
+        {
+            minLevel = std::atoi(ff[0].c_str());
+            maxLevel = std::atoi(ff[1].c_str());
+        }
+        filter.clear();
     }
 
     bool craftableOnly = false;
-    if (filter.find("+") != std::string::npos)
+    if (filter.find('+') != std::string::npos)
     {
         craftableOnly = true;
+
+        // Support "+<skill>" syntax (e.g. "spells +tailoring" or "spells tailoring+").
+        // If no explicit skill was detected yet, try to parse the filter (without '+')
+        // as a profession/skill name so that craftable-only filters still work with skills.
+        if (skill == SKILL_NONE)
+        {
+            std::string skillFilter = filter;
+
+            // Remove '+' before trying to interpret the first token as a skill name.
+            skillFilter.erase(remove(skillFilter.begin(), skillFilter.end(), '+'), skillFilter.end());
+
+            std::vector<std::string> skillTokens = split(skillFilter, ' ');
+            if (!skillTokens.empty())
+            {
+                uint32 parsedSkill = chat->parseSkill(skillTokens[0]);
+                if (parsedSkill != SKILL_NONE)
+                {
+                    skill = parsedSkill;
+
+                    // Any remaining text after the skill token becomes the "name" filter
+                    // (e.g. "spells +tailoring cloth" -> skill = tailoring, filter = "cloth").
+                    filter = skillTokens.size() > 1 ? skillTokens[1] : "";
+                }
+            }
+        }
+        // Finally remove '+' from the filter that will be used for name/range parsing.
         filter.erase(remove(filter.begin(), filter.end(), '+'), filter.end());
     }
 
     uint32 slot = chat->parseSlot(filter);
     if (slot != EQUIPMENT_SLOT_END)
-        filter = "";
+        filter.clear();
 
-    std::vector<std::pair<uint32, std::string>> spells;
+    std::vector<SpellListEntry> spells;
     for (PlayerSpellMap::iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
     {
         if (itr->second->State == PLAYERSPELL_REMOVED || !itr->second->Active)
@@ -193,8 +211,8 @@ std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::
                     if (!buyable)
                     {
                         uint32 craftable = reagentsInInventory / reagentsRequired;
-                        if (craftCount < 0 || craftCount > craftable)
-                            craftCount = craftable;
+                        if (craftCount < 0 || craftCount > static_cast<int32>(craftable))
+                            craftCount = static_cast<int32>(craftable);
                     }
 
                     if (reagentsInInventory)
@@ -278,7 +296,8 @@ std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::
         {
             LOG_ERROR("playerbots", "?! {}", itr->first);
         }
-        spells.push_back(std::pair<uint32, std::string>(itr->first, out.str()));
+        // CHANGE: Use emplace_back for slightly clearer intent.
+        spells.emplace_back(itr->first, out.str());
         alreadySeenList += spellInfo->SpellName[0];
         alreadySeenList += ",";
     }
@@ -288,31 +307,35 @@ std::vector<std::pair<uint32, std::string>> ListSpellsAction::GetSpellList(std::
 
 bool ListSpellsAction::Execute(Event event)
 {
+    // NOTE: This action is executed from a MapUpdater worker thread.
     Player* master = GetMaster();
     if (!master)
         return false;
 
     std::string const filter = event.getParam();
 
-    std::vector<std::pair<uint32, std::string>> spells = GetSpellList(filter);
+    std::vector<SpellListEntry> spells = GetSpellList(filter);
+
+    if (spells.empty())
+    {
+        // CHANGE: Give early feedback when no spells match the filter.
+        botAI->TellMaster("No spells found.");
+        return true;
+    }
 
     botAI->TellMaster("=== Spells ===");
 
     std::sort(spells.begin(), spells.end(), CompareSpells);
 
-    uint32 count = 0;
-    for (std::vector<std::pair<uint32, std::string>>::iterator i = spells.begin(); i != spells.end(); ++i)
-    {
+    // CHANGE: Send the full spell list again so client-side addons
+    // (e.g. Multibot / Unbot) can reconstruct the
+    // complete spellbook for configuration. The heavy part that caused
+    // freezes before was the old CompareSpells implementation scanning
+    // the entire SkillLineAbility DBC on every comparison. With the new
+    // cheap comparator above, sending all lines here is safe and keeps
+    // behaviour compatible with existing addons.
+    for (std::vector<SpellListEntry>::const_iterator i = spells.begin(); i != spells.end(); ++i)
         botAI->TellMasterNoFacing(i->second);
-
-        // if (++count >= 50)
-        // {
-        //     std::ostringstream msg;
-        //     msg << (spells.size() - 50) << " more...";
-        //     botAI->TellMasterNoFacing(msg.str());
-        //     break;
-        // }
-    }
 
     return true;
 }
