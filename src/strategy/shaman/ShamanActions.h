@@ -186,19 +186,16 @@ public:
     std::string const getName() override { return "cleanse spirit disease on party"; }
 };
 
-// NOTE: On WotLK, shamans use Cure Toxins (poison + disease).
-// These actions keep their original names ("cure poison"/"cure disease")
-// for compatibility but cast "cure toxins" under the hood.
 class CastCurePoisonActionSham : public CastCureSpellAction
 {
 public:
-    CastCurePoisonActionSham(PlayerbotAI* botAI) : CastCureSpellAction(botAI, "cure toxins") {}
+    CastCurePoisonActionSham(PlayerbotAI* botAI) : CastCureSpellAction(botAI, "cure poison") {}
 };
 
 class CastCurePoisonOnPartyActionSham : public CurePartyMemberAction
 {
 public:
-    CastCurePoisonOnPartyActionSham(PlayerbotAI* botAI) : CurePartyMemberAction(botAI, "cure toxins", DISPEL_POISON) {}
+    CastCurePoisonOnPartyActionSham(PlayerbotAI* botAI) : CurePartyMemberAction(botAI, "cure poison", DISPEL_POISON) {}
 
     std::string const getName() override { return "cure poison on party"; }
 };
@@ -206,13 +203,13 @@ public:
 class CastCureDiseaseActionSham : public CastCureSpellAction
 {
 public:
-    CastCureDiseaseActionSham(PlayerbotAI* botAI) : CastCureSpellAction(botAI, "cure toxins") {}
+    CastCureDiseaseActionSham(PlayerbotAI* botAI) : CastCureSpellAction(botAI, "cure disease") {}
 };
 
 class CastCureDiseaseOnPartyActionSham : public CurePartyMemberAction
 {
 public:
-    CastCureDiseaseOnPartyActionSham(PlayerbotAI* botAI) : CurePartyMemberAction(botAI, "cure toxins", DISPEL_DISEASE)
+    CastCureDiseaseOnPartyActionSham(PlayerbotAI* botAI) : CurePartyMemberAction(botAI, "cure disease", DISPEL_DISEASE)
     {
     }
 
