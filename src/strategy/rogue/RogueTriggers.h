@@ -126,4 +126,12 @@ public:
     TricksOfTheTradeOnMainTankTrigger(PlayerbotAI* ai) : BuffOnMainTankTrigger(ai, "tricks of the trade", true) {}
 };
 
+class BehindTargetTrigger : public Trigger
+{
+public:
+    BehindTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "behind target") {}
+
+    bool IsActive() override;
+};
+
 #endif
