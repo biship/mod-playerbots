@@ -78,6 +78,7 @@ public:
         creators["tricks of the trade on main tank"] = &RogueTriggerFactoryInternal::tricks_of_the_trade_on_main_tank;
         creators["adrenaline rush"] = &RogueTriggerFactoryInternal::adrenaline_rush;
         creators["blade fury"] = &RogueTriggerFactoryInternal::blade_fury;
+        creators["behind target"] = &RogueTriggerFactoryInternal::behind_target;
     }
 
 private:
@@ -101,6 +102,7 @@ private:
     {
         return new TricksOfTheTradeOnMainTankTrigger(ai);
     }
+    static Trigger* behind_target(PlayerbotAI* botAI) { return new BehindTargetTrigger(botAI); }
 };
 
 class RogueAiObjectContextInternal : public NamedObjectContext<Action>

@@ -125,3 +125,19 @@ bool OffHandWeaponNoEnchantTrigger::IsActive()
         return false;
     return true;
 }
+
+bool BehindTargetTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target)
+        return false;
+
+    // Check if bot is within melee range
+    if (!sServerFacade->IsDistanceLessOrEqualThan(sServerFacade->GetDistance2d(bot, target), ATTACK_DISTANCE))
+        return false;
+
+    // Check if bot is behind the target
+    // HasInArc checks if the bot is within the target's front arc (M_PI radians = 180 degrees)
+    // If target does NOT have the bot in its front arc, then bot is behind target
+    return !target->HasInArc(M_PI, bot);
+}
