@@ -442,6 +442,10 @@ bool CheckMountStateAction::ShouldMountToCloseDistance() const
     if (!master)
         return false;
 
+    // Only mount to close distance when actively following
+    if (!botAI->HasStrategy("follow", BOT_STATE_NON_COMBAT))
+        return false;
+
     float distToMaster = sServerFacade->GetDistance2d(bot, master);
     float mountDistance = CalculateMountDistance();
 
