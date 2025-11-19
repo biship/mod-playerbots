@@ -1043,7 +1043,7 @@ void MovementAction::UpdateMovementState()
         }
 
         // detect if movement restrictions have been lifted, CC just ended.
-        if (wasMovementRestricted)     
+        if (wasMovementRestricted)   
             movementFlagsUpdated = true; // refresh movement state to ensure animations play correctly
 
         if (movementFlagsUpdated)
