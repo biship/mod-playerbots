@@ -377,11 +377,17 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
 {
     if (!bot)
         return;
+<<<<<<< HEAD
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
     if (!botAI)
         return;
 
+=======
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return;
+>>>>>>> pr-1823
     Group* group = bot->GetGroup();
 
     bool IsRandomBot = sRandomPlayerbotMgr->IsRandomBot(bot);
@@ -389,7 +395,11 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
     // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
     if (!group)
     {
+<<<<<<< HEAD
         if (master && IsRandomBot)
+=======
+        if (master && (sRandomPlayerbotMgr->IsRandomBot(bot) || (botAI->IsAlt() && sPlayerbotAIConfig->enableAltRoaming)))
+>>>>>>> pr-1823
         {
             SetMaster(nullptr);
             Reset(true);
@@ -398,10 +408,15 @@ void PlayerbotAI::UpdateAIGroupAndMaster()
         return;
     }
 
+<<<<<<< HEAD
     // Bot in BG, but master no longer part of a group: release master
     // Exclude alt and addclass bots as they rely on current (real player) master, security-wise.
     if (bot->InBattleground() && IsRandomBot && master && !master->GetGroup())
         SetMaster(nullptr);
+=======
+    if (bot->InBattleground() && bot->GetBattleground()->GetBgTypeID() != BATTLEGROUND_AV)
+        return;
+>>>>>>> pr-1823
 
     PlayerbotAI* masterBotAI = nullptr;
     if (master)
@@ -4145,8 +4160,6 @@ bool PlayerbotAI::HasRealPlayerMaster()
 }
 
 bool PlayerbotAI::HasActivePlayerMaster() { return master && !GET_PLAYERBOT_AI(master); }
-
-bool PlayerbotAI::IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr->IsRandomBot(bot); }
 
 Player* PlayerbotAI::GetGroupMaster()
 {
