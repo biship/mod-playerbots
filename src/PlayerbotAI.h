@@ -530,6 +530,7 @@ public:
     Player* GetBot() { return bot; }
     Player* GetMaster() { return master; }
     Player* FindNewMaster();
+
     // Checks if the bot is really a player. Players always have themselves as master.
     bool IsRealPlayer() { return master ? (master == bot) : false; }
     // Bot has a master that is a player.
@@ -538,10 +539,7 @@ public:
     bool HasActivePlayerMaster();
     // Get the group leader or the master of the bot.
     // Checks if the bot is summoned as alt of a player
-    bool IsAlt(){return isAlt;}
-    void SetAlt(bool isALtflag) {isAlt = isALtflag;}
-    void SetAltMaster(Player*master) {altMaster = master;}
-    Player* GetAltMaster(){return altMaster;}
+    bool IsAlt();
     Player* GetGroupMaster();
     // Returns a semi-random (cycling) number that is fixed for each bot.
     uint32 GetFixedBotNumer(uint32 maxNum = 100, float cyclePerMin = 1);
@@ -624,8 +622,6 @@ private:
 protected:
     Player* bot;
     Player* master;
-    Player* altMaster = nullptr;
-    bool isAlt = false;
     uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;
