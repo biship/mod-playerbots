@@ -1048,7 +1048,6 @@ void MovementAction::UpdateMovementState()
 
         if (movementFlagsUpdated)
             bot->SendMovementFlagUpdate();
-
     }
 
      // Save current state for the next check
