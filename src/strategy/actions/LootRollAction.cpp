@@ -272,13 +272,13 @@ static bool GroupHasPrimarySpecUpgradeCandidate(Player* self, ItemTemplate const
         if (!IsPrimaryForSpec(member, proto))
             continue;
 
-        LOG_INFO("playerbots",
+        LOG_DEBUG("playerbots",
                   "[LootRollDBG] group primary spec upgrade: {} is primary candidate for item={} \"{}\" (usage={})",
                   member->GetName(), proto->ItemId, proto->Name1, static_cast<int32>(otherUsage));
         return true;
     }
 
-    LOG_INFO("playerbots",
+    LOG_DEBUG("playerbots",
               "[LootRollDBG] group primary spec upgrade: no primary candidate for item={} \"{}\"",
               proto->ItemId, proto->Name1);
     return false;
@@ -1521,7 +1521,7 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
                     }
                     else
                     {
-                        LOG_INFO("playerbots",
+                        LOG_DEBUG("playerbots",
                                   "[LootRollDBG] secondary-fallback: no primary spec upgrade in group, {} may NEED item={} \"{}\"",
                                   bot->GetName(), proto->ItemId, proto->Name1);
                     }
@@ -1659,7 +1659,7 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
             // (e.g. rogues on cloth SP/INT/SPI, casters on pure STR/AP plate, etc.).
             if (!IsFallbackNeedReasonableForSpec(bot, proto))
             {
-                LOG_INFO("playerbots",
+                LOG_DEBUG("playerbots",
                           "[LootRollDBG] cross-armor: {} too far off-spec for item={} \"{}\", keeping GREED",
                           bot->GetName(), proto->ItemId, proto->Name1);
             }
