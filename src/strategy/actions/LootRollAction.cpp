@@ -170,6 +170,58 @@ static bool IsLowerTierArmorForBot(Player* bot, ItemTemplate const* proto)
     return proto->SubClass < preferred;
 }
 
+// Returns true if another bot in the group (with proper armor tier) is likely to NEED this armor piece.
+static bool GroupHasPrimaryArmorUserLikelyToNeed(Player* self, ItemTemplate const* proto, int32 randomProperty)
+{
+    if (!self || !proto)
+        return false;
+
+    if (proto->Class != ITEM_CLASS_ARMOR || !IsBodyArmorInvType(proto->InventoryType))
+        return false;
+
+    Group* group = self->GetGroup();
+    if (!group)
+        return false;
+
+    std::ostringstream out;
+    if (randomProperty != 0)
+        out << proto->ItemId << "," << randomProperty;
+    else
+        out << proto->ItemId;
+
+    std::string const param = out.str();
+
+    for (GroupReference* it = group->GetFirstMember(); it; it = it->next())
+    {
+        Player* member = it->GetSource();
+        if (!member || member == self || !member->IsInWorld())
+            continue;
+
+        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+        if (!memberAI)
+            continue; // ignore real players
+
+        // Do not treat it as "primary" for bots for which this is also cross-armor
+        if (IsLowerTierArmorForBot(member, proto))
+            continue;
+
+        AiObjectContext* ctx = memberAI->GetAiObjectContext();
+        if (!ctx)
+            continue;
+
+        ItemUsage otherUsage = ctx->GetValue<ItemUsage>("item usage", param)->Get();
+        if (otherUsage == ITEM_USAGE_EQUIP || otherUsage == ITEM_USAGE_REPLACE)
+        {
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] cross-armor: primary armor user {} likely to need item={} \"{}\"",
+                      member->GetName(), proto->ItemId, proto->Name1);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // Local helper: identifies classic lockboxes the Rogue can pick.
 // Keep English-only fallback for name checks.
 static bool IsLockbox(ItemTemplate const* proto)
@@ -227,7 +279,7 @@ static bool GroupHasPreferredIntApUser(Player* self)
     }
     Group* g = self->GetGroup();
     
-	if (!g)
+    if (!g)
     {
         return false;
     }
@@ -318,9 +370,19 @@ static bool Match_IntAndAp(ItemTemplate const* proto)
         return false;
     const bool hasINT = HasAnyStat(proto, {ITEM_MOD_INTELLECT});
     const bool hasAP = HasAnyStat(proto, {ITEM_MOD_ATTACK_POWER, ITEM_MOD_RANGED_ATTACK_POWER});
-    const bool match = hasINT && hasAP;
-    LOG_DEBUG("playerbots", "[LootPaternDBG] INT+AP match? {} -> item={} \"{}\"", match ? "YES" : "NO", proto->ItemId,
-              proto->Name1);
+    const bool hasSP = HasAnyStat(proto, {ITEM_MOD_SPELL_POWER});
+    const bool hasSPI = HasAnyStat(proto, {ITEM_MOD_SPIRIT});
+    const bool hasMP5 = HasAnyStat(proto, {ITEM_MOD_MANA_REGENERATION});
+
+    // Treat as INT+AP hybrid only if it is not clearly a caster/healer item (SP/SPI/MP5).
+    const bool looksCaster = hasSP || hasSPI || hasMP5;
+    const bool match = hasINT && hasAP && !looksCaster;
+
+    LOG_DEBUG("playerbots",
+              "[LootPaternDBG] INT+AP match? {} -> item={} \"{}\" (INT={} AP={} casterStats={})",
+              match ? "YES" : "NO", proto->ItemId, proto->Name1,
+              hasINT ? 1 : 0, hasAP ? 1 : 0, looksCaster ? 1 : 0);
+
     return match;
 }
 
@@ -746,12 +808,12 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     const bool hasBlockValue = HasAnyStat(proto, {ITEM_MOD_BLOCK_VALUE});
     const bool looksTank = hasDef || hasAvoid || hasBlockValue;
 
-    // ----- Modulable Hook for special patterns exemple: (Items with Inter+AP)
+    // Do not let patterns override jewelry/cloak logic; these are handled separately below.
     bool primaryByPattern = false;
-    if (ApplyStatPatternsForPrimary(bot, proto, traits, primaryByPattern))
-	{
+    if (!isJewelry && ApplyStatPatternsForPrimary(bot, proto, traits, primaryByPattern))
+    {
         return primaryByPattern;
-	}
+    }
 
     // Non-tanks (DPS, casters/heals) never NEED purely tank items
     if (!isTankLikeSpec && looksTank)
@@ -778,22 +840,30 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
         if (isJewelry && looksCaster)
 		{
             return false;
-		}
+        }
     }
     else  // Caster/Healer
     {
         // (1) Casters/healers should not NEED pure melee items (STR/AP/ARP/EXP) without INT/SP
         if (looksPhysical && !hasSP && !hasINT)
-		{
+        {
             return false;
-		}
+        }
+
         // (2) Melee jewelry (AP/ARP/EXP/STR/AGI) without INT/SP -> off-spec
         if (isJewelry && looksPhysical && !hasSP && !hasINT)
-		{
+        {
             return false;
-		}
+        }
+
+        // (3) Healers: treat DPS caster items with Hit but no regen as off-spec (cloth SP/INT/HIT).
+        if (traits.isHealer && hasHIT && !hasMP5 && !hasSPI)
+        {
+            return false;
+        }
+
         // Paladin Holy (plate INT+SP/MP5), Shaman Elemental/Restoration (mail INT+SP/MP5),
-        // Druid Balance/Restoration (leather/cloth caster) → OK
+        // Druid Balance/Restoration (leather/cloth caster) -> OK
     }
 
     // Extra weapon sanity for Hunters/Ferals (avoid wrong stat-sticks):
@@ -806,14 +876,24 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
             proto->InventoryType == INVTYPE_WEAPONOFFHAND || proto->InventoryType == INVTYPE_2HWEAPON;
 
         if (meleeWeapon && traits.isHunter && !hasAGI)
-		{
+        {
             return false;
-		}
+        }
 
         if (meleeWeapon && (traits.isFeralTk || traits.isFeralDps) && !hasAGI && !hasSTR)
-		{
+        {
             return false;
-		}
+        }
+
+        // Enhancement shamans prefer slow weapons for Windfury; avoid very fast melee weapons as main-spec.
+        if (meleeWeapon && traits.isEnhSham)
+        {
+            // Delay is in milliseconds; 2000 ms = 2.0s. Anything faster than this is treated as off-spec.
+            if (proto->Delay > 0 && proto->Delay < 2000)
+            {
+                return false;
+            }
+        }
     }
 
     // Class/spec specific adjustments (readable)
@@ -846,6 +926,13 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
 
     // Rogue (all specs): same strict physical filter (no caster items)
     if (traits.isRogue && looksCaster)
+    {
+        return false;
+    }
+
+    // Rogue: do not treat INT leather body armor as primary (off-spec leveling pieces only).
+    if (traits.isRogue && proto->Class == ITEM_CLASS_ARMOR && IsBodyArmorInvType(proto->InventoryType) &&
+        proto->SubClass == ITEM_SUBCLASS_ARMOR_LEATHER && hasINT)
     {
         return false;
     }
@@ -1183,19 +1270,23 @@ bool LootRollAction::Execute(Event event)
         }
 
         // Disenchant (Need-Before-Greed):
-        // If the bot is ENCHANTING and the item is disenchantable, prefer DE to GREED
+        // If the bot is ENCHANTING and the item is explicitly marked as "DISENCHANT" usage, prefer DE to GREED.
         if (vote != NEED && sPlayerbotAIConfig->useDEButton && group &&
             (group->GetLootMethod() == NEED_BEFORE_GREED || group->GetLootMethod() == GROUP_LOOT) &&
-            bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto))
+            bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto) &&
+            usage == ITEM_USAGE_DISENCHANT)
         {
-            LOG_DEBUG("playerbots", "[LootRoolDBG] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1)",
-                      VoteTxt(vote), (int)group->GetLootMethod(), bot->HasSkill(SKILL_ENCHANTING));
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1, usage=DISENCHANT)",
+                      VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING));
             vote = DISENCHANT;
         }
         else
         {
-            LOG_DEBUG("playerbots", "[LootRollDBG] no DE: vote={} lootMethod={} enchSkill={} deOK={}", VoteTxt(vote),
-                      (int)group->GetLootMethod(), bot->HasSkill(SKILL_ENCHANTING), IsLikelyDisenchantable(proto));
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] no DE: vote={} lootMethod={} enchSkill={} deOK={} usage={}",
+                      VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING),
+                      IsLikelyDisenchantable(proto), static_cast<uint32>(usage));
         }
 
         if (sPlayerbotAIConfig->lootRollLevel == 0)
@@ -1381,7 +1472,7 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
         vote = PASS;
     }
 
-    // Cross-armor: if BAD_EQUIP (e.g. cloth for paladin), allow NEED only if it's a massive upgrade
+    /*// Cross-armor: if BAD_EQUIP (e.g. cloth for paladin), allow NEED only if it's a massive upgrade
     if (vote == GREED && usage == ITEM_USAGE_BAD_EQUIP && proto->Class == ITEM_CLASS_ARMOR)
     {
         StatsWeightCalculator calc(bot);
@@ -1407,8 +1498,52 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
         }
         if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
             vote = NEED;
-    }
+    }*/
 
+    // Cross-armor: if BAD_EQUIP (e.g. cloth for paladin), allow NEED only if
+    // - it is really lower-tier armor for this bot, and
+    // - no primary armor user in the group is likely to NEED it, and
+    // - it is a massive upgrade according to StatsWeightCalculator.
+    if (vote == GREED && usage == ITEM_USAGE_BAD_EQUIP && proto->Class == ITEM_CLASS_ARMOR &&
+        IsLowerTierArmorForBot(bot, proto))
+    {
+        if (!GroupHasPrimaryArmorUserLikelyToNeed(bot, proto, randomProperty))
+        {
+            StatsWeightCalculator calc(bot);
+            float newScore = calc.CalculateItem(proto->ItemId);
+            float bestOld = 0.0f;
+
+            // Find the best currently equipped item of the same InventoryType
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (!oldItem)
+                    continue;
+
+                ItemTemplate const* oldProto = oldItem->GetTemplate();
+                if (!oldProto)
+                    continue;
+                if (oldProto->Class != ITEM_CLASS_ARMOR)
+                    continue;
+                if (oldProto->InventoryType != proto->InventoryType)
+                    continue;
+
+                float oldScore =
+                    calc.CalculateItem(oldProto->ItemId, oldItem->GetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID));
+                if (oldScore > bestOld)
+                    bestOld = oldScore;
+            }
+
+            if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
+                vote = NEED;
+        }
+        else
+        {
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] cross-armor: keeping GREED, primary armor user present for item={} \"{}\"",
+                      proto->ItemId, proto->Name1);
+        }
+    }
     // Final decision (with allow/deny from loot strategy)
     RollVote finalVote = StoreLootAction::IsLootAllowed(proto->ItemId, GET_PLAYERBOT_AI(bot)) ? vote : PASS;
 
@@ -1463,9 +1598,25 @@ bool MasterLootRollAction::Execute(Event event)
               bot->GetName(), itemId, proto->Name1, proto->Class, proto->Quality, (int)group->GetLootMethod(),
               bot->HasSkill(SKILL_ENCHANTING), randomPropertyId);
 
+    // Compute random property and usage, same pattern as LootRollAction::Execute
+    int32 randomProperty = EncodeRandomEnchantParam(randomPropertyId, randomSuffix);
+
+    std::string itemUsageParam;
+    if (randomProperty != 0)
+    {
+        itemUsageParam = std::to_string(itemId) + "," + std::to_string(randomProperty);
+    }
+    else
+    {
+        itemUsageParam = std::to_string(itemId);
+    }
+
+    ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemUsageParam);
+
     // 1) Token heuristic: ONLY NEED if the target slot is a likely upgrade
     RollVote vote = PASS;
-    if (proto->Class == ITEM_CLASS_MISC && proto->SubClass == ITEM_SUBCLASS_JUNK && proto->Quality == ITEM_QUALITY_EPIC)
+    if (proto->Class == ITEM_CLASS_MISC && proto->SubClass == ITEM_SUBCLASS_JUNK &&
+        proto->Quality == ITEM_QUALITY_EPIC)
     {
         if (CanBotUseToken(proto, bot))
         {
@@ -1482,23 +1633,26 @@ bool MasterLootRollAction::Execute(Event event)
     }
     else
     {
-        vote = CalculateRollVote(proto, EncodeRandomEnchantParam(randomPropertyId, randomSuffix));
+        vote = CalculateRollVote(proto, randomProperty);
     }
 
-    // 2) Disenchant button in Need-Before-Greed if the usage is "DISENCHANT"
+    // 2) Disenchant button in Need-Before-Greed if the usage is explicitly "DISENCHANT"
     if (vote != NEED && sPlayerbotAIConfig->useDEButton &&
         (group->GetLootMethod() == NEED_BEFORE_GREED || group->GetLootMethod() == GROUP_LOOT) &&
-        bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto))
+        bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto) &&
+        usage == ITEM_USAGE_DISENCHANT)
     {
         LOG_DEBUG("playerbots",
-                  "[LootEnchantDBG][ML] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1)",
-                  VoteTxt(vote), (int)group->GetLootMethod(), bot->HasSkill(SKILL_ENCHANTING));
+                  "[LootEnchantDBG][ML] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1, usage=DISENCHANT)",
+                  VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING));
         vote = DISENCHANT;
     }
     else
     {
-        LOG_DEBUG("playerbots", "[LootEnchantDBG][ML] no DE: vote={} lootMethod={} enchSkill={} deOK={}", VoteTxt(vote),
-                  (int)group->GetLootMethod(), bot->HasSkill(SKILL_ENCHANTING), IsLikelyDisenchantable(proto));
+        LOG_DEBUG("playerbots",
+                  "[LootEnchantDBG][ML] no DE: vote={} lootMethod={} enchSkill={} deOK={} usage={}",
+                  VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING),
+                  IsLikelyDisenchantable(proto), static_cast<uint32>(usage));
     }
 
     RollVote sent = vote;
