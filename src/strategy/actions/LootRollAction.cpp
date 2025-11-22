@@ -29,6 +29,9 @@
 #include "SpellMgr.h"
 #include "StatsWeightCalculator.h"
 
+// Forward declaration used by group-level helpers
+static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto);
+
 // Groups the "class + archetype" info in the same place
 struct SpecTraits
 {
@@ -219,6 +222,63 @@ static bool GroupHasPrimaryArmorUserLikelyToNeed(Player* self, ItemTemplate cons
         }
     }
 
+    return false;
+}
+
+// Returns true if there is at least one bot in the group for whom this item is:
+// - an upgrade (ItemUsage = EQUIP or REPLACE), and
+// - a primary-spec item according to IsPrimaryForSpec().
+//
+// Used to implement a generic fallback:
+// if no such "primary" candidate exists, offspec upgrades are allowed to KEEP NEED
+// instead of being downgraded to GREED by SmartNeedBySpec.
+static bool GroupHasPrimarySpecUpgradeCandidate(Player* self, ItemTemplate const* proto, int32 randomProperty)
+{
+    if (!self || !proto)
+        return false;
+
+    Group* group = self->GetGroup();
+    if (!group)
+        return false;
+
+    std::ostringstream out;
+    if (randomProperty != 0)
+        out << proto->ItemId << "," << randomProperty;
+    else
+        out << proto->ItemId;
+
+    std::string const param = out.str();
+
+    for (GroupReference* it = group->GetFirstMember(); it; it = it->next())
+    {
+        Player* member = it->GetSource();
+        if (!member || member == self || !member->IsInWorld())
+            continue;
+
+        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+        if (!memberAI)
+            continue; // ignore real players
+
+        AiObjectContext* ctx = memberAI->GetAiObjectContext();
+        if (!ctx)
+            continue;
+
+        ItemUsage otherUsage = ctx->GetValue<ItemUsage>("item usage", param)->Get();
+        if (otherUsage != ITEM_USAGE_EQUIP && otherUsage != ITEM_USAGE_REPLACE)
+            continue; // not a real upgrade for that bot
+
+        if (!IsPrimaryForSpec(member, proto))
+            continue; // not mainspec for that bot
+
+        LOG_DEBUG("playerbots",
+                  "[LootRollDBG] group primary spec upgrade: {} is primary candidate for item={} \"{}\" (usage={})",
+                  member->GetName(), proto->ItemId, proto->Name1, static_cast<int32>(otherUsage));
+        return true;
+    }
+
+    LOG_DEBUG("playerbots",
+              "[LootRollDBG] group primary spec upgrade: no primary candidate for item={} \"{}\"",
+              proto->ItemId, proto->Name1);
     return false;
 }
 
@@ -856,7 +916,13 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
             return false;
         }
 
-        // (3) Healers: treat DPS caster items with Hit but no regen as off-spec (cloth SP/INT/HIT).
+        // (3) Healers: treat pure "DPS caster Hit" pieces as off-spec.
+        // Profile: SP/INT + Hit and *no* regen stats (no SPI, no MP5).
+        //
+        // This only marks the item as *not primary* for healers.
+        // The actual priority is decided later by SmartNeedBySpec + GroupHasPrimarySpecUpgradeCandidate:
+        //  - if a DPS caster bot has this item as a mainspec upgrade, healers are downgraded to GREED;
+        //  - if nobody in the group has it as mainspec upgrade, healers are allowed to keep NEED.
         if (traits.isHealer && hasHIT && !hasMP5 && !hasSPI)
         {
             return false;
@@ -1377,11 +1443,30 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
         {
             case ITEM_USAGE_EQUIP:
             case ITEM_USAGE_REPLACE:
-                vote = NEED;
+                /*vote = NEED;
                 // Downgrade to GREED if the item does not match the main spec
                 if (sPlayerbotAIConfig->smartNeedBySpec && !IsPrimaryForSpec(bot, proto))
                     vote = GREED;
+                break;*/
+            {
+                vote = NEED;
+                // SmartNeedBySpec: only downgrade to GREED if there is at least one
+                // "true mainspec upgrade" candidate in the group.
+                if (sPlayerbotAIConfig->smartNeedBySpec && !IsPrimaryForSpec(bot, proto))
+                {
+                    if (GroupHasPrimarySpecUpgradeCandidate(bot, proto, randomProperty))
+                    {
+                        vote = GREED;
+                    }
+                    else
+                    {
+                        LOG_INFO("playerbots",
+                                  "[LootRollDBG] secondary-fallback: no primary spec upgrade in group, {} may NEED item={} \"{}\"",
+                                  bot->GetName(), proto->ItemId, proto->Name1);
+                    }
+                }
                 break;
+            }
             case ITEM_USAGE_BAD_EQUIP:
             case ITEM_USAGE_GUILD_TASK:
             case ITEM_USAGE_SKILL:
@@ -1471,34 +1556,6 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     {
         vote = PASS;
     }
-
-    /*// Cross-armor: if BAD_EQUIP (e.g. cloth for paladin), allow NEED only if it's a massive upgrade
-    if (vote == GREED && usage == ITEM_USAGE_BAD_EQUIP && proto->Class == ITEM_CLASS_ARMOR)
-    {
-        StatsWeightCalculator calc(bot);
-        float newScore = calc.CalculateItem(proto->ItemId);
-        float bestOld = 0.0f;
-        // Find the best currently equipped item of the same InventoryType
-        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        {
-            Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (!oldItem)
-                continue;
-            ItemTemplate const* oldProto = oldItem->GetTemplate();
-            if (!oldProto)
-                continue;
-            if (oldProto->Class != ITEM_CLASS_ARMOR)
-                continue;
-            if (oldProto->InventoryType != proto->InventoryType)
-                continue;
-            float oldScore =
-                calc.CalculateItem(oldProto->ItemId, oldItem->GetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID));
-            if (oldScore > bestOld)
-                bestOld = oldScore;
-        }
-        if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
-            vote = NEED;
-    }*/
 
     // Cross-armor: if BAD_EQUIP (e.g. cloth for paladin), allow NEED only if
     // - it is really lower-tier armor for this bot, and
