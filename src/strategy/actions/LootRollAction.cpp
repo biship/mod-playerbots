@@ -171,7 +171,7 @@ static bool IsLowerTierArmorForBot(Player* bot, ItemTemplate const* proto)
         return false;
 
     uint8 preferred = PreferredArmorSubclassFor(bot);
-    // ITEM_SUBCLASS_ARMOR_* are ordered Cloth(1) < Leather(2) < Mail(3) < Plate(4) on 3.3.5a
+    // ITEM_SUBCLASS_ARMOR_* are ordered Cloth(1) < Leather(2) < Mail(3) < Plate(4) on 3.3.5
     return proto->SubClass < preferred;
 }
 
@@ -903,7 +903,7 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     const bool hasSP = HasAnyStat(proto, {ITEM_MOD_SPELL_POWER});
     const bool hasSTR = HasAnyStat(proto, {ITEM_MOD_STRENGTH});
     const bool hasAGI = HasAnyStat(proto, {ITEM_MOD_AGILITY});
-    const bool hasSTA = HasAnyStat(proto, {ITEM_MOD_STAMINA});
+    const bool hasSTA = HasAnyStat(proto, {ITEM_MOD_STAMINA}); // Not used now, but i keep it we never know
     const bool hasAP = HasAnyStat(proto, {ITEM_MOD_ATTACK_POWER, ITEM_MOD_RANGED_ATTACK_POWER});
     const bool hasARP = HasAnyStat(proto, {ITEM_MOD_ARMOR_PENETRATION_RATING});
     const bool hasEXP = HasAnyStat(proto, {ITEM_MOD_EXPERTISE_RATING});
@@ -1498,11 +1498,6 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
         {
             case ITEM_USAGE_EQUIP:
             case ITEM_USAGE_REPLACE:
-                /*vote = NEED;
-                // Downgrade to GREED if the item does not match the main spec
-                if (sPlayerbotAIConfig->smartNeedBySpec && !IsPrimaryForSpec(bot, proto))
-                    vote = GREED;
-                break;*/
             {
                 vote = NEED;
                 // SmartNeedBySpec: only downgrade to GREED if there is at least one
@@ -1627,33 +1622,6 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     {
         if (!GroupHasPrimaryArmorUserLikelyToNeed(bot, proto, randomProperty))
         {
-           /* StatsWeightCalculator calc(bot);
-            float newScore = calc.CalculateItem(proto->ItemId);
-            float bestOld = 0.0f;
-
-            // Find the best currently equipped item of the same InventoryType
-            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-            {
-                Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (!oldItem)
-                    continue;
-
-                ItemTemplate const* oldProto = oldItem->GetTemplate();
-                if (!oldProto)
-                    continue;
-                if (oldProto->Class != ITEM_CLASS_ARMOR)
-                    continue;
-                if (oldProto->InventoryType != proto->InventoryType)
-                    continue;
-
-                float oldScore =
-                    calc.CalculateItem(oldProto->ItemId, oldItem->GetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID));
-                if (oldScore > bestOld)
-                    bestOld = oldScore;
-            }
-
-            if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
-                vote = NEED;*/
             // Reuse the same sanity as the generic fallback:
             // even in cross-armor mode, do not allow NEED on completely off-spec items
             // (e.g. rogues on cloth SP/INT/SPI, casters on pure STR/AP plate, etc.).
