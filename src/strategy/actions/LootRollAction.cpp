@@ -29,8 +29,10 @@
 #include "SpellMgr.h"
 #include "StatsWeightCalculator.h"
 
-// Forward declaration used by group-level helpers
+// Forward declarations used by helpers defined later in this file
 static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto);
+static bool HasAnyStat(ItemTemplate const* proto,
+                       std::initializer_list<ItemModType> mods);
 
 // Groups the "class + archetype" info in the same place
 struct SpecTraits
@@ -230,7 +232,7 @@ static bool GroupHasPrimaryArmorUserLikelyToNeed(Player* self, ItemTemplate cons
 // - a primary-spec item according to IsPrimaryForSpec().
 //
 // Used to implement a generic fallback:
-// if no such "primary" candidate exists, offspec upgrades are allowed to KEEP NEED
+// if no such "primary" candidate exists, off-spec upgrades are allowed to keep NEED
 // instead of being downgraded to GREED by SmartNeedBySpec.
 static bool GroupHasPrimarySpecUpgradeCandidate(Player* self, ItemTemplate const* proto, int32 randomProperty)
 {
@@ -265,21 +267,74 @@ static bool GroupHasPrimarySpecUpgradeCandidate(Player* self, ItemTemplate const
 
         ItemUsage otherUsage = ctx->GetValue<ItemUsage>("item usage", param)->Get();
         if (otherUsage != ITEM_USAGE_EQUIP && otherUsage != ITEM_USAGE_REPLACE)
-            continue; // not a real upgrade for that bot
+            continue;
 
         if (!IsPrimaryForSpec(member, proto))
-            continue; // not mainspec for that bot
+            continue;
 
-        LOG_DEBUG("playerbots",
+        LOG_INFO("playerbots",
                   "[LootRollDBG] group primary spec upgrade: {} is primary candidate for item={} \"{}\" (usage={})",
                   member->GetName(), proto->ItemId, proto->Name1, static_cast<int32>(otherUsage));
         return true;
     }
 
-    LOG_DEBUG("playerbots",
+    LOG_INFO("playerbots",
               "[LootRollDBG] group primary spec upgrade: no primary candidate for item={} \"{}\"",
               proto->ItemId, proto->Name1);
     return false;
+}
+
+// Returns true if it is still reasonable for this spec to NEED the item as off-spec,
+// when no primary-spec upgrade candidate exists in the group.
+static bool IsFallbackNeedReasonableForSpec(Player* bot, ItemTemplate const* proto)
+{
+    if (!bot || !proto)
+        return false;
+
+    SpecTraits const traits = GetSpecTraits(bot);
+
+    bool const isJewelry = proto->InventoryType == INVTYPE_TRINKET || proto->InventoryType == INVTYPE_FINGER ||
+                           proto->InventoryType == INVTYPE_NECK || proto->InventoryType == INVTYPE_CLOAK;
+
+    bool const isBodyArmor = proto->Class == ITEM_CLASS_ARMOR && IsBodyArmorInvType(proto->InventoryType);
+
+    bool const hasINT = HasAnyStat(proto, {ITEM_MOD_INTELLECT});
+    bool const hasSPI = HasAnyStat(proto, {ITEM_MOD_SPIRIT});
+    bool const hasMP5 = HasAnyStat(proto, {ITEM_MOD_MANA_REGENERATION});
+    bool const hasSP = HasAnyStat(proto, {ITEM_MOD_SPELL_POWER});
+    bool const hasSTR = HasAnyStat(proto, {ITEM_MOD_STRENGTH});
+    bool const hasAGI = HasAnyStat(proto, {ITEM_MOD_AGILITY});
+    bool const hasAP = HasAnyStat(proto, {ITEM_MOD_ATTACK_POWER, ITEM_MOD_RANGED_ATTACK_POWER});
+    bool const hasARP = HasAnyStat(proto, {ITEM_MOD_ARMOR_PENETRATION_RATING});
+    bool const hasEXP = HasAnyStat(proto, {ITEM_MOD_EXPERTISE_RATING});
+
+    bool const looksCaster = hasSP || hasSPI || hasMP5 || (hasINT && !hasSTR && !hasAGI && !hasAP);
+    bool const looksPhysical = hasSTR || hasAGI || hasAP || hasARP || hasEXP;
+
+    // Physical specs: never fallback-NEED pure caster body armor or SP weapons/shields.
+    if (traits.isPhysical)
+    {
+        if (isBodyArmor && looksCaster)
+            return false;
+
+        if ((proto->Class == ITEM_CLASS_WEAPON ||
+             (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)) &&
+            hasSP)
+            return false;
+    }
+
+    // Caster/healer specs: never fallback-NEED pure melee body armor or melee-only jewelry.
+    if (traits.isCaster || traits.isHealer)
+    {
+        if (isBodyArmor && looksPhysical && !hasSP && !hasINT)
+            return false;
+
+        if (isJewelry && looksPhysical && !hasSP && !hasINT)
+            return false;
+    }
+
+    // Default: allow fallback NEED for this spec/item combination.
+    return true;
 }
 
 // Local helper: identifies classic lockboxes the Rogue can pick.
@@ -1451,11 +1506,17 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
             {
                 vote = NEED;
                 // SmartNeedBySpec: only downgrade to GREED if there is at least one
-                // "true mainspec upgrade" candidate in the group.
+                // "true mainspec upgrade" candidate in the group, or if this spec/item
+                // combination is too far off to justify NEED as off-spec.
                 if (sPlayerbotAIConfig->smartNeedBySpec && !IsPrimaryForSpec(bot, proto))
                 {
                     if (GroupHasPrimarySpecUpgradeCandidate(bot, proto, randomProperty))
                     {
+                        vote = GREED;
+                    }
+                    else if (!IsFallbackNeedReasonableForSpec(bot, proto))
+                    {
+                        // No mainspec candidate, but the item is too far off for this spec -> GREED.
                         vote = GREED;
                     }
                     else
@@ -1566,7 +1627,7 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     {
         if (!GroupHasPrimaryArmorUserLikelyToNeed(bot, proto, randomProperty))
         {
-            StatsWeightCalculator calc(bot);
+           /* StatsWeightCalculator calc(bot);
             float newScore = calc.CalculateItem(proto->ItemId);
             float bestOld = 0.0f;
 
@@ -1592,7 +1653,46 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
             }
 
             if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
-                vote = NEED;
+                vote = NEED;*/
+            // Reuse the same sanity as the generic fallback:
+            // even in cross-armor mode, do not allow NEED on completely off-spec items
+            // (e.g. rogues on cloth SP/INT/SPI, casters on pure STR/AP plate, etc.).
+            if (!IsFallbackNeedReasonableForSpec(bot, proto))
+            {
+                LOG_INFO("playerbots",
+                          "[LootRollDBG] cross-armor: {} too far off-spec for item={} \"{}\", keeping GREED",
+                          bot->GetName(), proto->ItemId, proto->Name1);
+            }
+            else
+            {
+                StatsWeightCalculator calc(bot);
+                float newScore = calc.CalculateItem(proto->ItemId);
+                float bestOld = 0.0f;
+
+                // Find the best currently equipped item of the same InventoryType
+                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                {
+                    Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                    if (!oldItem)
+                        continue;
+
+                    ItemTemplate const* oldProto = oldItem->GetTemplate();
+                    if (!oldProto)
+                        continue;
+                    if (oldProto->Class != ITEM_CLASS_ARMOR)
+                        continue;
+                    if (oldProto->InventoryType != proto->InventoryType)
+                        continue;
+
+                    float oldScore = calc.CalculateItem(
+                        oldProto->ItemId, oldItem->GetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID));
+                    if (oldScore > bestOld)
+                        bestOld = oldScore;
+                }
+
+                if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
+                    vote = NEED;
+            }
         }
         else
         {
