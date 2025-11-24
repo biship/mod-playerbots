@@ -544,7 +544,7 @@ static const std::array<StatPattern, 1> kStatPatterns = {{
 static bool ApplyStatPatternsForPrimary(Player* bot, ItemTemplate const* proto, const SpecTraits& traits,
                                         bool& outPrimary)
 {
-    for (const auto& p : kStatPatterns)
+    for (auto const& p : kStatPatterns)
     {
         if (p.matches(proto))
         {
