@@ -393,12 +393,12 @@ static bool GroupHasPreferredIntApUser(Player* self)
         return false;
     }
     Group* g = self->GetGroup();
-    
+
     if (!g)
     {
         return false;
     }
-	
+
     for (GroupReference* it = g->GetFirstMember(); it; it = it->next())
     {
         Player* p = it->GetSource();
@@ -574,7 +574,7 @@ static inline int32 EncodeRandomEnchantParam(uint32 randomPropertyId, uint32 ran
     {
         return -static_cast<int32>(randomSuffix);
     }
-	
+
     return 0;
 }
 
@@ -587,7 +587,7 @@ static bool BotAlreadyKnowsRecipeSpell(Player* bot, ItemTemplate const* proto)
 {
     if (!bot || !proto)
         return false;
-	
+
     // Many recipes have a single spell that "teaches" another spell (learned spell in EffectTriggerSpell).
     for (int i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
     {
@@ -724,29 +724,29 @@ static uint32 GuessRecipeSkill(ItemTemplate const* proto)
 static bool IsProfessionRecipeUsefulForBot(Player* bot, ItemTemplate const* proto)
 {
     if (!bot || !IsRecipeItem(proto))
-	{
+    {
         return false;
-	}
+    }
 
     // Primary path: DB usually sets RequiredSkill/RequiredSkillRank on recipe items.
     uint32 reqSkill = proto->RequiredSkill;
     uint32 reqRank = proto->RequiredSkillRank;
 
     if (!reqSkill)
-	{
+    {
         reqSkill = GuessRecipeSkill(proto);
-	}
+    }
 
     if (!reqSkill)
-	{
+    {
         return false;  // unknown profession, be conservative
-	}
+    }
 
     // Bot must have the profession (or secondary skill like Cooking/First Aid)
     if (!bot->HasSkill(reqSkill))
-	{
+    {
         return false;
-	}
+    }
 
     // Required rank check (can be disabled by config) — flatten nested if
     if (!sPlayerbotAIConfig->recipesIgnoreSkillRank && reqRank && bot->GetSkillValue(reqSkill) < reqRank)
@@ -756,9 +756,9 @@ static bool IsProfessionRecipeUsefulForBot(Player* bot, ItemTemplate const* prot
 
     // Avoid NEED if the taught spell is already known
     if (BotAlreadyKnowsRecipeSpell(bot, proto))
-	{
+    {
         return false;
-	}
+    }
 
     return true;
 }
@@ -768,16 +768,16 @@ static bool IsProfessionRecipeUsefulForBot(Player* bot, ItemTemplate const* prot
 static bool IsWeaponOrShieldOrRelicAllowedForClass(SpecTraits const& traits, ItemTemplate const* proto)
 {
     if (!proto)
-	{
+    {
         return true;  // non-weapon items handled elsewhere
-	}
+    }
 
     // Shields (Armor + Shield): Paladin / Warrior / Shaman
     if ((proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD) ||
         proto->InventoryType == INVTYPE_SHIELD)
-	{
+    {
         return traits.cls == CLASS_PALADIN || traits.cls == CLASS_WARRIOR || traits.cls == CLASS_SHAMAN;
-	}
+    }
 
     // Relics (Idol/Totem/Sigil/Libram)
     if (proto->InventoryType == INVTYPE_RELIC)
@@ -887,9 +887,9 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     // Hard filter first: do not NEED weapons/shields/relics the class shouldn't use.
     // If this returns false, the caller will downgrade to GREED (off-spec/unsupported).
     if (!IsWeaponOrShieldOrRelicAllowedForClass(traits, proto))
-	{
+    {
         return false;
-	}
+    }
 
     // Flags class/spec
     const bool isCasterSpec = traits.isCaster;
@@ -932,28 +932,28 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
 
     // Non-tanks (DPS, casters/heals) never NEED purely tank items
     if (!isTankLikeSpec && looksTank)
-	{
+    {
         return false;
-	}
+    }
 
     // Generic rules by role/family
     if (isPhysicalSpec)
     {
         // (1) All physicals/tanks: never Spell Power/Spirit/MP5 (even if plate/mail)
         if (looksCaster)
-		{
+        {
             return false;
-		}
+        }
         // (2) Weapon/shield with Spell Power: always off-spec for DK/War/Rogue/Hunter/Ret/Enh/Feral/Prot
         if ((proto->Class == ITEM_CLASS_WEAPON ||
              (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)) &&
             hasSP)
-		{
+        {
             return false;
-		}
+        }
         // (3) Jewelry/cloaks with caster stats (SP/SPI/MP5/pure INT) -> off-spec
         if (isJewelry && looksCaster)
-		{
+        {
             return false;
         }
     }
@@ -1035,14 +1035,14 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     if (traits.isHunter)
     {
         if (looksCaster)
-		{
+        {
             return false;
-		}
+        }
         // Avoid rings with "pure STR" without AGI/AP/DPS ratings
         if (isJewelry && hasSTR && !hasAGI && !hasAP && !hasDpsRatings)
-		{
+        {
             return false;
-		}
+        }
     }
 
     // Rogue (all specs): same strict physical filter (no caster items)
@@ -1074,15 +1074,15 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     if (traits.isEnhSham)
     {
         if (looksCaster)
-		{
+        {
             return false;
-		}
+        }
         if ((proto->Class == ITEM_CLASS_WEAPON ||
              (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)) &&
             hasSP)
-		{
+        {
             return false;
-		}
+        }
     }
 
     // Druid Feral (tank/DPS): AGI/STA/AVOID/ARP/EXP → OK; no caster items
@@ -1095,18 +1095,17 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     if (traits.isRetPal)
     {
         if (looksCaster)
-		{
+        {
             return false;
-		}
+        }
 
         // No Spell Power weapons or shields for Ret
         if ((proto->Class == ITEM_CLASS_WEAPON ||
              (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)) &&
             hasSP)
-		{
+        {
             return false;
-		}
-
+        }
         // Enforce 2H only (no 1H/off-hand/shields/holdables)
         switch (proto->InventoryType)
         {
@@ -1123,9 +1122,9 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
 
     // Global VETO: a "physical" spec never considers a caster profile as primary
     if (sPlayerbotAIConfig->smartNeedBySpec && traits.isPhysical && looksCaster)
-	{
+    {
         return false;
-	}
+    }
 
     // Let the cross-armor rules (CrossArmorExtraMargin) decide for major off-armor upgrades.
     return true;
@@ -1241,13 +1240,13 @@ static bool RollUniqueCheck(ItemTemplate const* proto, Player* bot);
 static inline bool IsLikelyDisenchantable(ItemTemplate const* proto)
 {
     if (!proto)
-	{
+    {
         return false;
-	}
+    }
     if (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON)
-	{
+    {
         return false;
-	}
+    }
     return proto->Quality >= ITEM_QUALITY_UNCOMMON && proto->Quality <= ITEM_QUALITY_EPIC;
 }
 
@@ -1261,30 +1260,30 @@ static int8 TokenSlotFromName(ItemTemplate const* proto)
     std::string n = std::string(proto->Name1);
     std::transform(n.begin(), n.end(), n.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (n.find("helm") != std::string::npos || n.find("head") != std::string::npos)
-	{
+    {
         return INVTYPE_HEAD;
-	}
+    }
     if (n.find("shoulder") != std::string::npos || n.find("mantle") != std::string::npos ||
         n.find("spauld") != std::string::npos)
-	{
+    {
         return INVTYPE_SHOULDERS;
-	}
+    }
     if (n.find("chest") != std::string::npos || n.find("tunic") != std::string::npos ||
         n.find("robe") != std::string::npos || n.find("breastplate") != std::string::npos ||
         n.find("chestguard") != std::string::npos)
-	{
+    {
         return INVTYPE_CHEST;
-	}
+    }
     if (n.find("glove") != std::string::npos || n.find("handguard") != std::string::npos ||
         n.find("gauntlet") != std::string::npos)
-	{
+    {
         return INVTYPE_HANDS;
-	}
+    }
     if (n.find("leg") != std::string::npos || n.find("pant") != std::string::npos ||
         n.find("trouser") != std::string::npos)
-	{
+    {
         return INVTYPE_LEGS;
-	}
+    }
     return -1;
 }
 
@@ -1296,9 +1295,9 @@ static bool IsTokenLikelyUpgrade(ItemTemplate const* token, uint8 invTypeSlot, P
         return false;
     uint8 eq = EquipmentSlotByInvTypeSafe(invTypeSlot);
     if (eq >= EQUIPMENT_SLOT_END)
-	{
+    {
         return true;  // unknown slot -> do not block Need
-	}
+    }
     Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, eq);
     if (!oldItem)
         return true;  // empty slot -> guaranteed upgrade
