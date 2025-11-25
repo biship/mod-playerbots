@@ -41,7 +41,7 @@ protected:
      *   - Disenchant (NBG): if ItemUsage = DISENCHANT and config enabled, vote DISENCHANT
      *                       (the core enforces if the DE button is actually available)
      */
-     
+
     // randomProperty: 0 (none) ; >0 = itemRandomPropId ; <0 = -itemRandomSuffix
     RollVote CalculateRollVote(ItemTemplate const* proto, int32 randomProperty = 0);
 };
