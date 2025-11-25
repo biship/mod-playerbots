@@ -82,12 +82,13 @@ public:
     PlayerbotsPlayerScript() : PlayerScript("PlayerbotsPlayerScript", {
         PLAYERHOOK_ON_LOGIN,
         PLAYERHOOK_ON_AFTER_UPDATE,
-        PLAYERHOOK_CAN_PLAYER_USE_CHAT,
-        PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
-        PLAYERHOOK_CAN_PLAYER_USE_GROUP_CHAT,
         PLAYERHOOK_ON_BEFORE_CRITERIA_PROGRESS,
         PLAYERHOOK_ON_BEFORE_ACHI_COMPLETE,
+        PLAYERHOOK_CAN_PLAYER_USE_CHAT,
         PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT,
+        PLAYERHOOK_CAN_PLAYER_USE_GROUP_CHAT,
+        PLAYERHOOK_CAN_PLAYER_USE_GUILD_CHAT,
+        PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
         PLAYERHOOK_ON_GIVE_EXP,
         PLAYERHOOK_ON_BEFORE_TELEPORT
     }) {}
@@ -164,10 +165,13 @@ public:
             {
                 botAI->HandleCommand(type, msg, player);
 
-                return false;
+                // hotfix; otherwise the server will crash when whispering logout
+                // https://github.com/mod-playerbots/mod-playerbots/pull/1838
+                // TODO: find the root cause and solve it. (does not happen in party chat)
+                if (msg == "logout")
+                    return false;
             }
         }
-
         return true;
     }
 
@@ -187,7 +191,7 @@ public:
         return true;
     }
 
-    bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
+    bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Guild* guild) override
     {
         if (type == CHAT_MSG_GUILD)
         {
@@ -206,7 +210,6 @@ public:
                 }
             }
         }
-
         return true;
     }
 
@@ -221,7 +224,6 @@ public:
         }
 
         sRandomPlayerbotMgr->HandleCommand(type, msg, player);
-
         return true;
     }
 
