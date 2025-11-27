@@ -105,6 +105,27 @@ static SpecTraits GetSpecTraits(Player* bot)
     return t;
 }
 
+// Tanks adjustments
+static bool HasItemMod(ItemTemplate const* proto, uint32 mod)
+{
+    if (!proto) return false;
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
+    {
+        if (proto->ItemStat[i].ItemStatType == mod && proto->ItemStat[i].ItemStatValue)
+            return true;
+    }
+    return false;
+}
+
+static bool HasAnyTankAvoidance(ItemTemplate const* proto)
+{
+    // Evitements “tank”
+    return HasItemMod(proto, ITEM_MOD_DEFENSE_SKILL_RATING)
+        || HasItemMod(proto, ITEM_MOD_DODGE_RATING)
+        || HasItemMod(proto, ITEM_MOD_PARRY_RATING)
+        || HasItemMod(proto, ITEM_MOD_BLOCK_RATING);
+}
+
 // Return true if the invType is a "body armor" slot (not jewelry/cape/weapon/shield/relic/holdable)
 static bool IsBodyArmorInvType(uint8 invType)
 {
@@ -875,6 +896,17 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
 
     const SpecTraits traits = GetSpecTraits(bot);
 
+     // --- Tank fast-path for jewelry/cloaks ---
+    // Typical case: Str+Dodge+Stam collar without Defense
+    if (isJewelry && traits.isTank)
+    {
+        if (HasAnyTankAvoidance(proto))
+        {
+           // Jewelry/cloak with avoidance => "primary" for tanks
+            return true;
+        }
+    }
+    
     // HARD GUARD: never consider lower-tier armor as "primary" for the spec (body armor only)
     if (!isJewelry && proto->Class == ITEM_CLASS_ARMOR && IsBodyArmorInvType(proto->InventoryType))
     {
