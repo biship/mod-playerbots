@@ -906,7 +906,7 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
             return true;
         }
     }
-    
+
     // HARD GUARD: never consider lower-tier armor as "primary" for the spec (body armor only)
     if (!isJewelry && proto->Class == ITEM_CLASS_ARMOR && IsBodyArmorInvType(proto->InventoryType))
     {
