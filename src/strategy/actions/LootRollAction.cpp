@@ -248,6 +248,112 @@ static bool GroupHasPrimaryArmorUserLikelyToNeed(Player* self, ItemTemplate cons
     return false;
 }
 
+// Returns true if there is at least one bot in the group for whom this armor piece is:
+// - an upgrade (ItemUsage = EQUIP or REPLACE), and
+// - the currently equipped item in the same slot is "very bad" (empty or poor/common quality).
+//
+// Used to avoid granting cross-armor NEED when a clearly undergeared bot actually needs the piece.
+static bool GroupHasDesperateUpgradeUser(Player* self, ItemTemplate const* proto, int32 randomProperty)
+{
+    if (!self || !proto)
+    {
+        return false;
+    }
+
+    // Only makes sense for real body armor pieces (no jewelry/capes/weapons).
+    if (proto->Class != ITEM_CLASS_ARMOR || !IsBodyArmorInvType(proto->InventoryType))
+    {
+        return false;
+    }
+
+    Group* group = self->GetGroup();
+    if (!group)
+    {
+        return false;
+    }
+
+    std::ostringstream out;
+    if (randomProperty != 0)
+    {
+        out << proto->ItemId << "," << randomProperty;
+    }
+    else
+    {
+        out << proto->ItemId;
+    }
+
+    std::string const param = out.str();
+
+    for (GroupReference* it = group->GetFirstMember(); it; it = it->next())
+    {
+        Player* member = it->GetSource();
+        if (!member || member == self || !member->IsInWorld())
+            continue;
+
+        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+        if (!memberAI)
+            continue; // ignore real players
+
+        AiObjectContext* ctx = memberAI->GetAiObjectContext();
+        if (!ctx)
+            continue;
+
+        ItemUsage usage = ctx->GetValue<ItemUsage>("item usage", param)->Get();
+        if (usage != ITEM_USAGE_EQUIP && usage != ITEM_USAGE_REPLACE)
+            continue; // not a true upgrade for this bot
+
+        // Look at the best currently equipped armor of the same InventoryType
+        Item* bestItem = nullptr;
+        ItemTemplate const* bestProto = nullptr;
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* oldItem = member->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!oldItem)
+                continue;
+
+            ItemTemplate const* oldProto = oldItem->GetTemplate();
+            if (!oldProto)
+                continue;
+
+            if (oldProto->Class != ITEM_CLASS_ARMOR)
+                continue;
+
+            if (oldProto->InventoryType != proto->InventoryType)
+                continue;
+
+            if (!bestProto || oldProto->ItemLevel > bestProto->ItemLevel)
+            {
+                bestItem = oldItem;
+                bestProto = oldProto;
+            }
+        }
+
+        bool hasVeryBadItem = false;
+
+        if (!bestProto)
+        {
+            // Empty slot -> extremely undergeared for this piece
+            hasVeryBadItem = true;
+        }
+        else if (bestProto->Quality <= ITEM_QUALITY_NORMAL)
+        {
+            // Poor (grey) or Common (white) gear -> considered "bad"
+            hasVeryBadItem = true;
+        }
+
+        if (hasVeryBadItem)
+        {
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] cross-armor: desperate upgrade candidate {} blocks cross-armor NEED on item={} \"{}\"",
+                      member->GetName(), proto->ItemId, proto->Name1);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // Returns true if there is at least one bot in the group for whom this item is:
 // - an upgrade (ItemUsage = EQUIP or REPLACE), and
 // - a primary-spec item according to IsPrimaryForSpec().
@@ -335,13 +441,25 @@ static bool IsFallbackNeedReasonableForSpec(Player* bot, ItemTemplate const* pro
     // Physical specs: never fallback-NEED pure caster body armor or SP weapons/shields.
     if (traits.isPhysical)
     {
+        // Do not fallback-NEED caster body armor (cloth/leather/mail/plate with SP/INT caster profile)
         if (isBodyArmor && looksCaster)
+        {
             return false;
+        }
 
+        // Do not fallback-NEED caster jewelry/cloaks (pure SP/INT/SPI/MP5 profiles)
+        if (isJewelry && looksCaster)
+        {
+            return false;
+        }
+
+        // Do not fallback-NEED spell power weapons or shields
         if ((proto->Class == ITEM_CLASS_WEAPON ||
              (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)) &&
             hasSP)
+        {
             return false;
+        }
     }
 
     // Caster/healer specs: never fallback-NEED pure melee body armor or melee-only jewelry.
@@ -599,6 +717,16 @@ static inline int32 EncodeRandomEnchantParam(uint32 randomPropertyId, uint32 ran
     return 0;
 }
 
+static inline std::string BuildItemUsageParam(uint32 itemId, int32 randomProperty)
+{
+    if (randomProperty != 0)
+    {
+        return std::to_string(itemId) + "," + std::to_string(randomProperty);
+    }
+
+    return std::to_string(itemId);
+}
+
 // Professions helpers Returns true if the item is a Recipe/Pattern/Book (ITEM_CLASS_RECIPE)
 static inline bool IsRecipeItem(ItemTemplate const* proto) { return proto && proto->Class == ITEM_CLASS_RECIPE; }
 
@@ -628,6 +756,81 @@ static bool BotAlreadyKnowsRecipeSpell(Player* bot, ItemTemplate const* proto)
             }
         }
     }
+    return false;
+}
+
+// Mounts / pets / vanity collectibles: treat them as cosmetic collectibles for roll purposes.
+static bool IsCosmeticCollectible(ItemTemplate const* proto)
+{
+    if (!proto)
+    {
+        return false;
+    }
+
+    if (proto->Class != ITEM_CLASS_MISC)
+    {
+        return false;
+    }
+
+    // Mounts and companion pets are Misc items in WotLK.
+    // Prefer core enums when available, otherwise fall back to known 3.3.5 values:
+    //  - SubClass 2: companion pets
+    //  - SubClass 5: mounts
+#if defined(ITEM_SUBCLASS_MISC_MOUNT) || defined(ITEM_SUBCLASS_MISC_PET)
+    if (
+#  if defined(ITEM_SUBCLASS_MISC_MOUNT)
+        proto->SubClass == ITEM_SUBCLASS_MISC_MOUNT
+#  endif
+#  if defined(ITEM_SUBCLASS_MISC_MOUNT) && defined(ITEM_SUBCLASS_MISC_PET)
+        ||
+#  endif
+#  if defined(ITEM_SUBCLASS_MISC_PET)
+        proto->SubClass == ITEM_SUBCLASS_MISC_PET
+#  endif
+    )
+    {
+        return true;
+    }
+#else
+    if (proto->SubClass == 2 || proto->SubClass == 5)
+    {
+        return true;
+    }
+#endif
+
+    return false;
+}
+
+// Returns true if the bot already owns or knows the collectible (mount/pet) in a meaningful way.
+static bool BotAlreadyHasCollectible(Player* bot, ItemTemplate const* proto)
+{
+    if (!bot || !proto)
+    {
+        return false;
+    }
+
+    // First, check if the item teaches a spell the bot already knows (typical for mounts/pets).
+    for (int i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+    {
+        uint32 const spellId = proto->Spells[i].SpellId;
+        if (!spellId)
+        {
+            continue;
+        }
+
+        if (bot->HasSpell(spellId))
+        {
+            return true;
+        }
+    }
+
+    // Fallback: if the bot already has at least one copy of the item (bags or bank),
+    // consider the collectible as "already owned" and do not roll NEED again.
+    if (bot->GetItemCount(proto->ItemId, true) > 0)
+    {
+        return true;
+    }
+
     return false;
 }
 
@@ -1340,6 +1543,64 @@ static bool IsTokenLikelyUpgrade(ItemTemplate const* token, uint8 invTypeSlot, P
     return (float)token->ItemLevel >= (float)oldProto->ItemLevel + margin;
 }
 
+static bool TryTokenRollVote(ItemTemplate const* proto, Player* bot, RollVote& outVote)
+{
+    if (!proto || !bot)
+    {
+        return false;
+    }
+
+    if (proto->Class != ITEM_CLASS_MISC || proto->SubClass != ITEM_SUBCLASS_JUNK ||
+        proto->Quality != ITEM_QUALITY_EPIC)
+    {
+        return false;
+    }
+
+    if (CanBotUseToken(proto, bot))
+    {
+        int8 const tokenSlot = TokenSlotFromName(proto);
+        if (tokenSlot >= 0)
+        {
+            outVote = IsTokenLikelyUpgrade(proto, static_cast<uint8>(tokenSlot), bot) ? NEED : GREED;
+        }
+        else
+        {
+            outVote = GREED;  // Unknown slot (e.g. T10 sanctification tokens)
+        }
+    }
+    else
+    {
+        outVote = GREED;  // Not eligible, so Greed
+    }
+
+    return true;
+}
+
+static RollVote ApplyDisenchantPreference(RollVote currentVote, ItemTemplate const* proto, ItemUsage usage,
+                                          Group* group, Player* bot, char const* logTag)
+{
+    std::string const tag = logTag ? logTag : "[LootRollDBG]";
+
+    bool const isDeCandidate = IsLikelyDisenchantable(proto);
+    bool const hasEnchantSkill = bot && bot->HasSkill(SKILL_ENCHANTING);
+    int32 const lootMethod = group ? static_cast<int32>(group->GetLootMethod()) : -1;
+
+    if (currentVote != NEED && sPlayerbotAIConfig->useDEButton && group &&
+        (group->GetLootMethod() == NEED_BEFORE_GREED || group->GetLootMethod() == GROUP_LOOT) &&
+        hasEnchantSkill && isDeCandidate && usage == ITEM_USAGE_DISENCHANT)
+    {
+        LOG_DEBUG("playerbots",
+                  "{} DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1, usage=DISENCHANT)",
+                  tag, VoteTxt(currentVote), lootMethod, hasEnchantSkill ? 1 : 0);
+        return DISENCHANT;
+    }
+
+    LOG_DEBUG("playerbots", "{} no DE: vote={} lootMethod={} enchSkill={} deOK={} usage={}", tag, VoteTxt(currentVote),
+              lootMethod, hasEnchantSkill ? 1 : 0, isDeCandidate ? 1 : 0, static_cast<uint32>(usage));
+
+    return currentVote;
+}
+
 bool LootRollAction::Execute(Event event)
 {
     Group* group = bot->GetGroup();
@@ -1370,51 +1631,13 @@ bool LootRollAction::Execute(Event event)
                   bot->HasSkill(SKILL_ENCHANTING), randomProperty);
 
         RollVote vote = PASS;
-        std::string itemUsageParam;
 
-        if (randomProperty != 0)
-        {
-            itemUsageParam = std::to_string(itemId) + "," + std::to_string(randomProperty);
-        }
-        else
-        {
-            itemUsageParam = std::to_string(itemId);
-        }
+        std::string const itemUsageParam = BuildItemUsageParam(itemId, randomProperty);
         ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemUsageParam);
 
         LOG_DEBUG("playerbots", "[LootRollDBG] usage={} (EQUIP=1 REPLACE=2 BAD_EQUIP=8 DISENCHANT=13)", (int)usage);
 
-        // Armor Tokens are classed as MISC JUNK (Class 15, Subclass 0), but no other items have class bits and epic
-        // quality.
-        // - CanBotUseToken(proto, bot) => NEED
-        // - else => GREED
-        if (proto->Class == ITEM_CLASS_MISC && proto->SubClass == ITEM_SUBCLASS_JUNK &&
-            proto->Quality == ITEM_QUALITY_EPIC)
-        {
-            if (CanBotUseToken(proto, bot))
-            {
-                // vote = NEED; // Eligible for Need
-                // Token mainspec: NEED only if the corresponding slot piece would be a real upgrade
-                int8 tokenSlot = TokenSlotFromName(proto);
-                if (tokenSlot >= 0)
-                {
-                    if (IsTokenLikelyUpgrade(proto, (uint8)tokenSlot, bot))
-                        vote = NEED;
-                    else
-                        vote = GREED;
-                }
-                else
-                {
-                    // Unknown slot (e.g. T10 sanctification tokens)
-                    vote = GREED;
-                }
-            }
-            else
-            {
-                vote = GREED;  // Not eligible, so Greed
-            }
-        }
-        else
+        if (!TryTokenRollVote(proto, bot, vote))        
         {
             // Lets CalculateRollVote decide (includes SmartNeedBySpec, BoE/BoU, unique, cross-armor)
             vote = CalculateRollVote(proto, randomProperty);
@@ -1423,23 +1646,7 @@ bool LootRollAction::Execute(Event event)
 
         // Disenchant (Need-Before-Greed):
         // If the bot is ENCHANTING and the item is explicitly marked as "DISENCHANT" usage, prefer DE to GREED.
-        if (vote != NEED && sPlayerbotAIConfig->useDEButton && group &&
-            (group->GetLootMethod() == NEED_BEFORE_GREED || group->GetLootMethod() == GROUP_LOOT) &&
-            bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto) &&
-            usage == ITEM_USAGE_DISENCHANT)
-        {
-            LOG_DEBUG("playerbots",
-                      "[LootRollDBG] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1, usage=DISENCHANT)",
-                      VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING));
-            vote = DISENCHANT;
-        }
-        else
-        {
-            LOG_DEBUG("playerbots",
-                      "[LootRollDBG] no DE: vote={} lootMethod={} enchSkill={} deOK={} usage={}",
-                      VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING),
-                      IsLikelyDisenchantable(proto), static_cast<uint32>(usage));
-        }
+        vote = ApplyDisenchantPreference(vote, proto, usage, group, bot, "[LootRollDBG]");
 
         if (sPlayerbotAIConfig->lootRollLevel == 0)
         {
@@ -1492,6 +1699,17 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
 
     RollVote vote = PASS;
 
+    bool const isCollectibleCosmetic = IsCosmeticCollectible(proto);
+    bool const alreadyHasCollectible = isCollectibleCosmetic && BotAlreadyHasCollectible(bot, proto);
+
+    if (isCollectibleCosmetic)
+    {
+        // Simple human-like rule for mounts/pets:
+        // - NEED if the bot does not have it yet,
+        // - GREED if the bot already knows/owns it.
+        vote = alreadyHasCollectible ? GREED : NEED;
+    }
+
     bool recipeChecked = false;
     bool recipeNeed = false;
     bool recipeUseful = false;
@@ -1523,7 +1741,8 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     }
 
     // Do not overwrite the choice if we have already decided via the "recipe" logic
-    if (!recipeChecked)
+    // or via the cosmetic collectible override (mounts/pets).
+    if (!recipeChecked && !isCollectibleCosmetic)
     {
         switch (usage)
         {
@@ -1614,18 +1833,20 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     constexpr uint32 BIND_WHEN_EQUIPPED = 2;  // BoE
     constexpr uint32 BIND_WHEN_USE = 3;       // BoU
 
-    if (vote == NEED && !recipeNeed && !isLockbox && proto->Bonding == BIND_WHEN_EQUIPPED &&
+    if (vote == NEED && !recipeNeed && !isLockbox && !isCollectibleCosmetic &&
+        proto->Bonding == BIND_WHEN_EQUIPPED &&
         !sPlayerbotAIConfig->allowBoENeedIfUpgrade)
     {
         vote = GREED;
     }
-    if (vote == NEED && !recipeNeed && !isLockbox && proto->Bonding == BIND_WHEN_USE &&
+    if (vote == NEED && !recipeNeed && !isLockbox && !isCollectibleCosmetic &&
+        proto->Bonding == BIND_WHEN_USE &&
         !sPlayerbotAIConfig->allowBoUNeedIfUpgrade)
     {
         vote = GREED;
     }
 
-    // Duplicate soft rule (non-unique):
+    // Duplicate soft rule non-unique:
     // - Default: if the bot already owns at least one copy => NEED -> GREED.
     // - Exception: Book of Glyph Mastery (you can own several) => keep NEED.
     if (vote == NEED)
@@ -1653,6 +1874,16 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
     {
         if (!GroupHasPrimaryArmorUserLikelyToNeed(bot, proto, randomProperty))
         {
+            // Extra guard: if another bot is clearly undergeared in this slot (empty or grey/white item)
+            // and sees this piece as an upgrade, do not allow cross-armor NEED here.
+            if (GroupHasDesperateUpgradeUser(bot, proto, randomProperty))
+            {
+                LOG_DEBUG("playerbots",
+                          "[LootRollDBG] cross-armor: keeping GREED, desperate upgrade user present for item={} \"{}\"",
+                          proto->ItemId, proto->Name1);
+            }
+            else
+            {
             // Reuse the same sanity as the generic fallback:
             // even in cross-armor mode, do not allow NEED on completely off-spec items
             // (e.g. rogues on cloth SP/INT/SPI, casters on pure STR/AP plate, etc.).
@@ -1692,6 +1923,7 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
                 if (bestOld > 0.0f && newScore >= bestOld * sPlayerbotAIConfig->crossArmorExtraMargin)
                     vote = NEED;
             }
+            }
         }
         else
         {
@@ -1700,6 +1932,22 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
                       proto->ItemId, proto->Name1);
         }
     }
+
+    // Cross-armor hard override:
+    // If configured, never let bots NEED or GREED on lower-tier body armor (cloth/leather/mail below their tier).
+    // This closes the holes where cross-armor items are classified as EQUIP/REPLACE
+    // and therefore bypass the earlier CrossArmorGreedIsPass logic.
+    if (sPlayerbotAIConfig->crossArmorGreedIsPass &&
+        proto->Class == ITEM_CLASS_ARMOR &&
+        IsLowerTierArmorForBot(bot, proto) &&
+        vote != PASS)
+    {
+        LOG_DEBUG("playerbots",
+                  "[LootRollDBG] cross-armor: CrossArmorGreedIsPass forcing PASS (was {}), item={} \"{}\"",
+                  VoteTxt(vote), proto->ItemId, proto->Name1);
+        vote = PASS;
+    }
+
     // Final decision (with allow/deny from loot strategy)
     RollVote finalVote = StoreLootAction::IsLootAllowed(proto->ItemId, GET_PLAYERBOT_AI(bot)) ? vote : PASS;
 
@@ -1757,59 +2005,19 @@ bool MasterLootRollAction::Execute(Event event)
     // Compute random property and usage, same pattern as LootRollAction::Execute
     int32 randomProperty = EncodeRandomEnchantParam(randomPropertyId, randomSuffix);
 
-    std::string itemUsageParam;
-    if (randomProperty != 0)
-    {
-        itemUsageParam = std::to_string(itemId) + "," + std::to_string(randomProperty);
-    }
-    else
-    {
-        itemUsageParam = std::to_string(itemId);
-    }
-
+    std::string const itemUsageParam = BuildItemUsageParam(itemId, randomProperty);
     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemUsageParam);
 
     // 1) Token heuristic: ONLY NEED if the target slot is a likely upgrade
     RollVote vote = PASS;
-    if (proto->Class == ITEM_CLASS_MISC && proto->SubClass == ITEM_SUBCLASS_JUNK &&
-        proto->Quality == ITEM_QUALITY_EPIC)
-    {
-        if (CanBotUseToken(proto, bot))
-        {
-            int8 tokenSlot = TokenSlotFromName(proto);  // Internal helper
-            if (tokenSlot >= 0)
-                vote = IsTokenLikelyUpgrade(proto, (uint8)tokenSlot, bot) ? NEED : GREED;
-            else
-                vote = GREED;  // Unknow slot
-        }
-        else
-        {
-            vote = GREED;
-        }
-    }
-    else
+
+	if (!TryTokenRollVote(proto, bot, vote))
     {
         vote = CalculateRollVote(proto, randomProperty);
     }
 
     // 2) Disenchant button in Need-Before-Greed if the usage is explicitly "DISENCHANT"
-    if (vote != NEED && sPlayerbotAIConfig->useDEButton &&
-        (group->GetLootMethod() == NEED_BEFORE_GREED || group->GetLootMethod() == GROUP_LOOT) &&
-        bot->HasSkill(SKILL_ENCHANTING) && IsLikelyDisenchantable(proto) &&
-        usage == ITEM_USAGE_DISENCHANT)
-    {
-        LOG_DEBUG("playerbots",
-                  "[LootEnchantDBG][ML] DE switch: {} -> DISENCHANT (lootMethod={}, enchSkill={}, deOK=1, usage=DISENCHANT)",
-                  VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING));
-        vote = DISENCHANT;
-    }
-    else
-    {
-        LOG_DEBUG("playerbots",
-                  "[LootEnchantDBG][ML] no DE: vote={} lootMethod={} enchSkill={} deOK={} usage={}",
-                  VoteTxt(vote), static_cast<int32>(group->GetLootMethod()), bot->HasSkill(SKILL_ENCHANTING),
-                  IsLikelyDisenchantable(proto), static_cast<uint32>(usage));
-    }
+    vote = ApplyDisenchantPreference(vote, proto, usage, group, bot, "[LootEnchantDBG][ML]");
 
     RollVote sent = vote;
     if (group->GetLootMethod() == MASTER_LOOT || group->GetLootMethod() == FREE_FOR_ALL)
