@@ -1637,7 +1637,7 @@ bool LootRollAction::Execute(Event event)
 
         LOG_DEBUG("playerbots", "[LootRollDBG] usage={} (EQUIP=1 REPLACE=2 BAD_EQUIP=8 DISENCHANT=13)", (int)usage);
 
-        if (!TryTokenRollVote(proto, bot, vote))        
+        if (!TryTokenRollVote(proto, bot, vote))   
         {
             // Lets CalculateRollVote decide (includes SmartNeedBySpec, BoE/BoU, unique, cross-armor)
             vote = CalculateRollVote(proto, randomProperty);
@@ -2011,7 +2011,7 @@ bool MasterLootRollAction::Execute(Event event)
     // 1) Token heuristic: ONLY NEED if the target slot is a likely upgrade
     RollVote vote = PASS;
 
-	if (!TryTokenRollVote(proto, bot, vote))
+    if (!TryTokenRollVote(proto, bot, vote))
     {
         vote = CalculateRollVote(proto, randomProperty);
     }
