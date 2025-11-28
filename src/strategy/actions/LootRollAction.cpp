@@ -1636,8 +1636,7 @@ bool LootRollAction::Execute(Event event)
         ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemUsageParam);
 
         LOG_DEBUG("playerbots", "[LootRollDBG] usage={} (EQUIP=1 REPLACE=2 BAD_EQUIP=8 DISENCHANT=13)", (int)usage);
-
-        if (!TryTokenRollVote(proto, bot, vote))   
+        if (!TryTokenRollVote(proto, bot, vote))
         {
             // Lets CalculateRollVote decide (includes SmartNeedBySpec, BoE/BoU, unique, cross-armor)
             vote = CalculateRollVote(proto, randomProperty);
