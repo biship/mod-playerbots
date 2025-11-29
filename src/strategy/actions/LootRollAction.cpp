@@ -354,6 +354,126 @@ static bool GroupHasDesperateUpgradeUser(Player* self, ItemTemplate const* proto
     return false;
 }
 
+// Returns true if there is at least one bot in the group for whom this jewelry piece is:
+// - an upgrade (ItemUsage = EQUIP or REPLACE), and
+// - the currently equipped item in at least one corresponding slot is "very bad" (empty or poor/common quality).
+//
+// Used to avoid granting off-spec fallback NEED on jewelry/cloaks when another bot is clearly undergeared
+// for that slot.
+static bool GroupHasDesperateJewelryUpgradeUser(Player* self, ItemTemplate const* proto, int32 randomProperty)
+{
+    if (!self || !proto)
+    {
+        return false;
+    }
+
+    uint8 jewelrySlots[2];
+    uint8 slotsCount = 0;
+
+    switch (proto->InventoryType)
+    {
+        case INVTYPE_NECK:
+            jewelrySlots[0] = EQUIPMENT_SLOT_NECK;
+            slotsCount = 1;
+            break;
+        case INVTYPE_FINGER:
+            jewelrySlots[0] = EQUIPMENT_SLOT_FINGER1;
+            jewelrySlots[1] = EQUIPMENT_SLOT_FINGER2;
+            slotsCount = 2;
+            break;
+        case INVTYPE_TRINKET:
+            jewelrySlots[0] = EQUIPMENT_SLOT_TRINKET1;
+            jewelrySlots[1] = EQUIPMENT_SLOT_TRINKET2;
+            slotsCount = 2;
+            break;
+        case INVTYPE_CLOAK:
+            jewelrySlots[0] = EQUIPMENT_SLOT_BACK;
+            slotsCount = 1;
+            break;
+        default:
+            // Not jewelry/cloak -> nothing to do here
+            return false;
+    }
+
+    Group* group = self->GetGroup();
+    if (!group)
+    {
+        return false;
+    }
+
+    std::ostringstream out;
+    if (randomProperty != 0)
+    {
+        out << proto->ItemId << "," << randomProperty;
+    }
+    else
+    {
+        out << proto->ItemId;
+    }
+
+    std::string const param = out.str();
+
+    for (GroupReference* it = group->GetFirstMember(); it; it = it->next())
+    {
+        Player* member = it->GetSource();
+        if (!member || member == self || !member->IsInWorld())
+            continue;
+
+        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+        if (!memberAI)
+            continue; // ignore real players
+
+        AiObjectContext* ctx = memberAI->GetAiObjectContext();
+        if (!ctx)
+            continue;
+
+        ItemUsage usage = ctx->GetValue<ItemUsage>("item usage", param)->Get();
+        if (usage != ITEM_USAGE_EQUIP && usage != ITEM_USAGE_REPLACE)
+            continue; // not a true upgrade for this bot
+
+        ItemTemplate const* bestProto = nullptr;
+
+        // Look at the best currently equipped jewelry in the corresponding slots
+        for (uint8 i = 0; i < slotsCount; ++i)
+        {
+            uint8 const slot = jewelrySlots[i];
+            Item* oldItem = member->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!oldItem)
+                continue;
+
+            ItemTemplate const* oldProto = oldItem->GetTemplate();
+            if (!oldProto)
+                continue;
+
+            if (!bestProto || oldProto->ItemLevel > bestProto->ItemLevel)
+                bestProto = oldProto;
+        }
+
+        bool hasVeryBadItem = false;
+
+        if (!bestProto)
+        {
+            // Empty slot -> extremely undergeared for this jewelry/cloak
+            hasVeryBadItem = true;
+        }
+        else if (bestProto->Quality <= ITEM_QUALITY_NORMAL)
+        {
+            // Poor (grey) or Common (white) jewelry -> considered "bad"
+            hasVeryBadItem = true;
+        }
+
+        if (hasVeryBadItem)
+        {
+            LOG_DEBUG("playerbots",
+                      "[LootRollDBG] jewelry-fallback: desperate upgrade candidate {} for item={} \"{}\"",
+                      member->GetName(), proto->ItemId, proto->Name1);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // Returns true if there is at least one bot in the group for whom this item is:
 // - an upgrade (ItemUsage = EQUIP or REPLACE), and
 // - a primary-spec item according to IsPrimaryForSpec().
@@ -1765,9 +1885,26 @@ RollVote LootRollAction::CalculateRollVote(ItemTemplate const* proto, int32 rand
                     }
                     else
                     {
-                        LOG_DEBUG("playerbots",
-                                  "[LootRollDBG] secondary-fallback: no primary spec upgrade in group, {} may NEED item={} \"{}\"",
-                                  bot->GetName(), proto->ItemId, proto->Name1);
+                        // Off-spec fallback: allow NEED only if there is no "desperate" jewelry user
+                        // with an empty/very bad item in the same slot(s).
+                        bool const isJewelry = proto->InventoryType == INVTYPE_TRINKET ||
+                                               proto->InventoryType == INVTYPE_FINGER ||
+                                               proto->InventoryType == INVTYPE_NECK ||
+                                               proto->InventoryType == INVTYPE_CLOAK;
+
+                        if (isJewelry && GroupHasDesperateJewelryUpgradeUser(bot, proto, randomProperty))
+                        {
+                            LOG_DEBUG("playerbots",
+                                      "[LootRollDBG] jewelry-fallback: downgrade NEED to GREED, desperate upgrade user present for item={} \"{}\"",
+                                      proto->ItemId, proto->Name1);
+                            vote = GREED;
+                        }
+                        else
+                        {
+                            LOG_DEBUG("playerbots",
+                                      "[LootRollDBG] secondary-fallback: no primary spec upgrade in group, {} may NEED item={} \"{}\"",
+                                      bot->GetName(), proto->ItemId, proto->Name1);
+                        }
                     }
                 }
                 break;
