@@ -67,7 +67,7 @@ void WorldPacketHandlerStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode("questgiver quest details", NextAction::array(0, new NextAction("turn in query quest", relevance), nullptr)));
 
     // loot roll
-    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("loot roll", relevance + 1), nullptr)));
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("loot roll", relevance), nullptr)));
 }
 
 WorldPacketHandlerStrategy::WorldPacketHandlerStrategy(PlayerbotAI* botAI) : PassTroughStrategy(botAI)
