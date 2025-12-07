@@ -196,6 +196,35 @@ static bool IsLowerTierArmorForBot(Player* bot, ItemTemplate const* proto)
     return proto->SubClass < preferred;
 }
 
+// True if this is a body-armor piece that the bot cannot currently wear because
+// it lacks the corresponding armor proficiency skill (leather / mail / plate).
+// Cloth is always considered wearable (all classes can equip it).
+static bool IsArmorProficiencyMissingForBody(Player* bot, ItemTemplate const* proto)
+{
+    if (!bot || !proto)
+        return false;
+
+    if (proto->Class != ITEM_CLASS_ARMOR)
+        return false;
+
+    if (!IsBodyArmorInvType(proto->InventoryType))
+        return false;
+
+    switch (proto->SubClass)
+    {
+        case ITEM_SUBCLASS_ARMOR_LEATHER:
+            return !bot->HasSkill(SKILL_LEATHER);
+        case ITEM_SUBCLASS_ARMOR_MAIL:
+            return !bot->HasSkill(SKILL_MAIL);
+        case ITEM_SUBCLASS_ARMOR_PLATE:
+            return !bot->HasSkill(SKILL_PLATE_MAIL);
+        default:
+            break;
+    }
+
+    return false;
+}
+
 // Returns true if another bot in the group (with proper armor tier) is likely to NEED this armor piece.
 static bool GroupHasPrimaryArmorUserLikelyToNeed(Player* self, ItemTemplate const* proto, int32 randomProperty)
 {
@@ -554,11 +583,25 @@ static bool IsFallbackNeedReasonableForSpec(Player* bot, ItemTemplate const* pro
     bool const hasAP = HasAnyStat(proto, {ITEM_MOD_ATTACK_POWER, ITEM_MOD_RANGED_ATTACK_POWER});
     bool const hasARP = HasAnyStat(proto, {ITEM_MOD_ARMOR_PENETRATION_RATING});
     bool const hasEXP = HasAnyStat(proto, {ITEM_MOD_EXPERTISE_RATING});
+    bool const hasHIT = HasAnyStat(proto, {ITEM_MOD_HIT_RATING});
+    bool const hasHASTE = HasAnyStat(proto, {ITEM_MOD_HASTE_RATING});
+    bool const hasCRIT = HasAnyStat(proto, {ITEM_MOD_CRIT_RATING});
+
+    // Spirit-only regen jewelry (no INT/SP/offensive stats).
+    bool const pureSpiritJewelry = isJewelry && hasSPI && !hasSP && !hasINT &&
+                                   !hasSTR && !hasAGI && !hasAP && !hasARP && !hasEXP &&
+                                   !hasHIT && !hasHASTE && !hasCRIT;
 
     bool const looksCaster = hasSP || hasSPI || hasMP5 || (hasINT && !hasSTR && !hasAGI && !hasAP);
     bool const looksPhysical = hasSTR || hasAGI || hasAP || hasARP || hasEXP;
 
     // Physical specs: never fallback-NEED pure caster body armor or SP weapons/shields.
+    // Also, if the bot cannot even wear the armor (no proficiency skill), NEED is never reasonable.
+    if (IsArmorProficiencyMissingForBody(bot, proto))
+    {
+        return false;
+    }
+
     if (traits.isPhysical)
     {
         // Do not fallback-NEED caster body armor (cloth/leather/mail/plate with SP/INT caster profile)
@@ -580,6 +623,12 @@ static bool IsFallbackNeedReasonableForSpec(Player* bot, ItemTemplate const* pro
         {
             return false;
         }
+    }
+
+    // DPS casters: do not fallback-NEED pure Spirit regen jewelry; leave that for healers.
+    if (pureSpiritJewelry && traits.isCaster && !traits.isHealer)
+    {
+        return false;
     }
 
     // Caster/healer specs: never fallback-NEED pure melee body armor or melee-only jewelry.
@@ -1219,7 +1268,13 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
 
     const SpecTraits traits = GetSpecTraits(bot);
 
-     // --- Tank fast-path for jewelry/cloaks ---
+    // Never treat armor that the bot cannot wear (missing proficiency) as main-spec.
+    if (IsArmorProficiencyMissingForBody(bot, proto))
+    {
+        return false;
+    }
+
+    // --- Tank fast-path for jewelry/cloaks ---
     // Typical case: Str+Dodge+Stam collar without Defense
     if (isJewelry && traits.isTank)
     {
@@ -1272,7 +1327,9 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     const bool looksCaster = hasSP || hasSPI || hasMP5 || (hasINT && !hasSTR && !hasAGI && !hasAP);
     const bool looksPhysical = hasSTR || hasAGI || hasAP || hasARP || hasEXP;
     const bool hasDpsRatings = hasHIT || hasHASTE || hasCRIT;  // Common to all DPS (physical & casters)
-
+    const bool pureSpiritJewelry = isJewelry && hasSPI && !hasSP && !hasINT &&
+                                   !hasSTR && !hasAGI && !hasAP && !hasARP && !hasEXP &&
+                                   !hasHIT && !hasHASTE && !hasCRIT; // Spirit-only regen jewelry (no INT/SP/offensive stats): treat as healer-oriented.
     // Tank-only profile: Defense / Avoidance (dodge/parry/block rating) / Block value
     // Do NOT tag all shields as "tank": there are caster shields (INT/SP/MP5)
     const bool hasBlockValue = HasAnyStat(proto, {ITEM_MOD_BLOCK_VALUE});
@@ -1314,6 +1371,13 @@ static bool IsPrimaryForSpec(Player* bot, ItemTemplate const* proto)
     }
     else  // Caster/Healer
     {
+        // Pure Spirit regen jewelry (SPI only, no INT/SP/throughput stats) is healer mainspec only.
+        // DPS casters should treat it as off-spec so they do not NEED it over proper DPS jewelry.
+        if (pureSpiritJewelry && !traits.isHealer)
+        {
+            return false;
+        }
+
         // (1) Casters/healers should not NEED pure melee items (STR/AP/ARP/EXP) without INT/SP
         if (looksPhysical && !hasSP && !hasINT)
         {
