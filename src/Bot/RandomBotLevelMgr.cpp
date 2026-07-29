@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "DatabaseEnv.h"
+#include "LFGMgr.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -38,13 +39,13 @@ static bool IsNameInExcludeList(Player* bot, std::vector<std::string> const& exc
 }
 
 // Checks if the given bot is present in any real player's friends list.
-static bool BotInFriendList(Player* bot, std::vector<uint64> const& socialFriendsList)
+static bool BotInFriendList(Player* bot, std::vector<uint32> const& socialFriendsList)
 {
     if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() ||
         bot->IsDuringRemoveFromWorld())
         return false;
 
-    return std::find(socialFriendsList.begin(), socialFriendsList.end(), bot->GetGUID().GetRawValue()) !=
+    return std::find(socialFriendsList.begin(), socialFriendsList.end(), bot->GetGUID().GetCounter()) !=
         socialFriendsList.end();
 }
 
@@ -79,6 +80,15 @@ static bool IsBotSafeForLevelReset(Player* bot)
 
     if (bot->InBattleground() || bot->InArena() || bot->inRandomLfgDungeon() || bot->InBattlegroundQueue())
         return false;
+
+    if (sLFGMgr->GetState(bot->GetGUID()) != lfg::LFG_STATE_NONE)
+        return false;
+
+    if (Group* group = bot->GetGroup())
+    {
+        if (sLFGMgr->GetState(group->GetGUID()) != lfg::LFG_STATE_NONE)
+            return false;
+    }
 
     if (bot->IsInFlight())
         return false;
@@ -122,17 +132,17 @@ void RandomBotLevelMgr::LogStartupSummary() const
 {
     if (!sPlayerbotAIConfig.levelBracketsEnabled)
         LOG_INFO("playerbots", "[RandomBotLevelMgr] Level brackets sub-feature disabled via configuration.");
-    else if (sPlayerbotAIConfig.levelBracketsFullDebug || sPlayerbotAIConfig.levelBracketsLiteDebug)
+    else
     {
-        LOG_INFO("playerbots",
+        LOG_DEBUG("playerbots",
             "[RandomBotLevelMgr] Level brackets loaded. Check frequency: {} seconds, flagged check frequency: {} "
             "seconds.",
             sPlayerbotAIConfig.levelBracketsCheckFrequency, sPlayerbotAIConfig.levelBracketsFlaggedCheckFrequency);
         for (uint8 i = 0; i < _numRanges; ++i)
-            LOG_INFO("playerbots", "[RandomBotLevelMgr] Alliance Range {}: {}-{}, Desired Percentage: {}%", i + 1,
+            LOG_DEBUG("playerbots", "[RandomBotLevelMgr] Alliance Range {}: {}-{}, Desired Percentage: {}%", i + 1,
                 _allianceRanges[i].lower, _allianceRanges[i].upper, _allianceRanges[i].pct);
         for (uint8 i = 0; i < _numRanges; ++i)
-            LOG_INFO("playerbots", "[RandomBotLevelMgr] Horde Range {}: {}-{}, Desired Percentage: {}%", i + 1,
+            LOG_DEBUG("playerbots", "[RandomBotLevelMgr] Horde Range {}: {}-{}, Desired Percentage: {}%", i + 1,
                 _hordeRanges[i].lower, _hordeRanges[i].upper, _hordeRanges[i].pct);
     }
 
@@ -193,10 +203,8 @@ void RandomBotLevelMgr::ClampAndBalanceBrackets()
 
     if (totalAlliance != 100 && totalAlliance > 0)
     {
-        if (sPlayerbotAIConfig.levelBracketsFullDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] Alliance: Sum of percentages is {} (expected 100). Auto adjusting.",
-                totalAlliance);
+        LOG_TRACE("playerbots",
+            "[RandomBotLevelMgr] Alliance: Sum of percentages is {} (expected 100). Auto adjusting.", totalAlliance);
         int missing = 100 - totalAlliance;
         while (missing > 0)
         {
@@ -212,9 +220,8 @@ void RandomBotLevelMgr::ClampAndBalanceBrackets()
     }
     if (totalHorde != 100 && totalHorde > 0)
     {
-        if (sPlayerbotAIConfig.levelBracketsFullDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] Horde: Sum of percentages is {} (expected 100). Auto adjusting.", totalHorde);
+        LOG_TRACE("playerbots", "[RandomBotLevelMgr] Horde: Sum of percentages is {} (expected 100). Auto adjusting.",
+            totalHorde);
         int missing = 100 - totalHorde;
         while (missing > 0)
         {
@@ -307,14 +314,11 @@ void RandomBotLevelMgr::AdjustBotToRange(Player* bot, int targetRangeIndex, Team
         uint8 upperBound = factionRanges[targetRangeIndex].upper;
         if (upperBound < dkMinLevel)
         {
-            if (sPlayerbotAIConfig.levelBracketsFullDebug)
-            {
-                char const* playerFaction = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-                LOG_INFO("playerbots",
-                    "[RandomBotLevelMgr] AdjustBotToRange: Cannot assign {} Death Knight '{}' ({}) to range {}-{} "
-                    "(below level {}).",
-                    playerFaction, bot->GetName(), botOriginalLevel, lowerBound, upperBound, dkMinLevel);
-            }
+            LOG_TRACE("playerbots",
+                "[RandomBotLevelMgr] AdjustBotToRange: Cannot assign {} Death Knight '{}' ({}) to range {}-{} "
+                "(below level {}).",
+                (team == TEAM_ALLIANCE) ? "Alliance" : "Horde", bot->GetName(), botOriginalLevel, lowerBound,
+                upperBound, dkMinLevel);
             return;
         }
         if (lowerBound < dkMinLevel)
@@ -328,12 +332,8 @@ void RandomBotLevelMgr::AdjustBotToRange(Player* bot, int targetRangeIndex, Team
         LevelBracketConfig const& range = factionRanges[targetRangeIndex];
         if (range.lower > range.upper)
         {
-            if (sPlayerbotAIConfig.levelBracketsFullDebug)
-            {
-                char const* playerFaction = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-                LOG_INFO("playerbots", "[RandomBotLevelMgr] AdjustBotToRange: Invalid range {}-{} for {} bot '{}'.",
-                    range.lower, range.upper, playerFaction, bot->GetName());
-            }
+            LOG_TRACE("playerbots", "[RandomBotLevelMgr] AdjustBotToRange: Invalid range {}-{} for {} bot '{}'.",
+                range.lower, range.upper, (team == TEAM_ALLIANCE) ? "Alliance" : "Horde", bot->GetName());
             return;
         }
         newLevel = urand(range.lower, range.upper);
@@ -351,19 +351,15 @@ void RandomBotLevelMgr::AdjustBotToRange(Player* bot, int targetRangeIndex, Team
         tempFactory.InitTalentsTree(false, true, true);
     }
 
-    if (sPlayerbotAIConfig.levelBracketsFullDebug)
-    {
-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        std::string playerClassName = botAI ? botAI->GetChatHelper()->FormatClass(bot->getClass()) : "Unknown";
-        char const* playerFaction = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-        LOG_INFO("playerbots",
-            "[RandomBotLevelMgr] AdjustBotToRange: {} Bot '{}' - {} ({}) adjusted to level {} (target range {}-{}).",
-            playerFaction, bot->GetName(), playerClassName, botOriginalLevel, newLevel,
-            factionRanges[targetRangeIndex].lower, factionRanges[targetRangeIndex].upper);
-    }
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    LOG_TRACE("playerbots",
+        "[RandomBotLevelMgr] AdjustBotToRange: {} Bot '{}' - {} ({}) adjusted to level {} (target range {}-{}).",
+        (team == TEAM_ALLIANCE) ? "Alliance" : "Horde", bot->GetName(),
+        botAI ? botAI->GetChatHelper()->FormatClass(bot->getClass()) : "Unknown", botOriginalLevel, newLevel,
+        factionRanges[targetRangeIndex].lower, factionRanges[targetRangeIndex].upper);
 }
 
-// Loads the list of social friend GUIDs (character_social, flags = 1) into _socialFriendsList.
+// Loads the list of social friend low GUIDs (character_social, flags = 1) into _socialFriendsList.
 void RandomBotLevelMgr::LoadSocialFriendList()
 {
     _socialFriendsList.clear();
@@ -374,8 +370,7 @@ void RandomBotLevelMgr::LoadSocialFriendList()
 
     do
     {
-        uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        _socialFriendsList.push_back(static_cast<uint64>(socialFriendGUID));
+        _socialFriendsList.push_back(result->Fetch()->Get<uint32>());
     } while (result->NextRow());
 }
 
@@ -527,9 +522,8 @@ void RandomBotLevelMgr::ProcessFactionDistribution(TeamId team, uint32 totalBots
     for (uint8 i = 0; i < _numRanges; ++i)
     {
         desiredCounts[i] = static_cast<int>(std::round((ranges[i].pct / 100.0) * totalBots));
-        if (sPlayerbotAIConfig.levelBracketsFullDebug || sPlayerbotAIConfig.levelBracketsLiteDebug)
-            LOG_INFO("playerbots", "[RandomBotLevelMgr] {} Range {} ({}-{}): Desired = {}, Actual = {}.", factionName,
-                i + 1, ranges[i].lower, ranges[i].upper, desiredCounts[i], actualCounts[i]);
+        LOG_DEBUG("playerbots", "[RandomBotLevelMgr] {} Range {} ({}-{}): Desired = {}, Actual = {}.",
+            factionName, i + 1, ranges[i].lower, ranges[i].upper, desiredCounts[i], actualCounts[i]);
     }
 
     for (uint8 i = 0; i < _numRanges; ++i)
@@ -638,13 +632,10 @@ void RandomBotLevelMgr::RunLevelBracketsDistribution()
         // Ensure brackets respect global min/max levels and percentages sum to 100.
         ClampAndBalanceBrackets();
 
-        if (sPlayerbotAIConfig.levelBracketsFullDebug || sPlayerbotAIConfig.levelBracketsLiteDebug)
-        {
-            for (uint8 i = 0; i < _numRanges; ++i)
-                LOG_INFO("playerbots",
-                    "[RandomBotLevelMgr] Final Range {}: {}-{}, Alliance Desired: {}%, Horde Desired: {}%", i + 1,
-                    _allianceRanges[i].lower, _allianceRanges[i].upper, _allianceRanges[i].pct, _hordeRanges[i].pct);
-        }
+        for (uint8 i = 0; i < _numRanges; ++i)
+            LOG_DEBUG("playerbots",
+                "[RandomBotLevelMgr] Final Range {}: {}-{}, Alliance Desired: {}%, Horde Desired: {}%", i + 1,
+                _allianceRanges[i].lower, _allianceRanges[i].upper, _allianceRanges[i].pct, _hordeRanges[i].pct);
     }
 
     uint32 totalAllianceBots = 0;
@@ -695,17 +686,15 @@ void RandomBotLevelMgr::RunLevelBracketsDistribution()
         }
     }
 
-    if (sPlayerbotAIConfig.levelBracketsFullDebug || sPlayerbotAIConfig.levelBracketsLiteDebug)
-        LOG_INFO("playerbots", "[RandomBotLevelMgr] Total Alliance Bots: {}. Total Horde Bots: {}.", totalAllianceBots,
-            totalHordeBots);
+    LOG_DEBUG("playerbots", "[RandomBotLevelMgr] Total Alliance Bots: {}. Total Horde Bots: {}.",
+        totalAllianceBots, totalHordeBots);
 
     ProcessFactionDistribution(TEAM_ALLIANCE, totalAllianceBots, allianceActualCounts, allianceBotsByRange);
     ProcessFactionDistribution(TEAM_HORDE, totalHordeBots, hordeActualCounts, hordeBotsByRange);
 
-    if (sPlayerbotAIConfig.levelBracketsFullDebug || sPlayerbotAIConfig.levelBracketsLiteDebug)
-        LOG_INFO("playerbots",
-            "[RandomBotLevelMgr] Distribution adjustment complete. Alliance bots: {}, Horde bots: {}.",
-            totalAllianceBots, totalHordeBots);
+    LOG_DEBUG("playerbots",
+        "[RandomBotLevelMgr] Distribution adjustment complete. Alliance bots: {}, Horde bots: {}.", totalAllianceBots,
+        totalHordeBots);
 }
 
 // Processes the pending level reset queue, applying up to FlaggedProcessLimit resets per cycle
@@ -814,13 +803,12 @@ uint8 RandomBotLevelMgr::ComputeResetChance(uint8 level) const
     {
         chance = static_cast<uint8>((static_cast<float>(level) / sPlayerbotAIConfig.resetBotLevelMaxLevel) *
             sPlayerbotAIConfig.resetBotLevelChance);
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] ComputeResetChance: For level {} / {} with scaling, computed chance = {}%",
-                level, sPlayerbotAIConfig.resetBotLevelMaxLevel, chance);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] ComputeResetChance: For level {} / {} with scaling, computed chance = {}%", level,
+            sPlayerbotAIConfig.resetBotLevelMaxLevel, chance);
     }
-    else if (sPlayerbotAIConfig.resetBotLevelDebug)
-        LOG_INFO("playerbots",
+    else
+        LOG_DEBUG("playerbots",
             "[RandomBotLevelMgr] ComputeResetChance: For level {} / {} without scaling, chance = {}%", level,
             sPlayerbotAIConfig.resetBotLevelMaxLevel, chance);
     return chance;
@@ -843,13 +831,10 @@ void RandomBotLevelMgr::ResetBot(Player* player, uint8 currentLevel)
     PlayerbotFactory newFactory(player, levelToResetTo);
     newFactory.Randomize(false);
 
-    if (sPlayerbotAIConfig.resetBotLevelDebug)
-    {
-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
-        std::string playerClassName = botAI ? botAI->GetChatHelper()->FormatClass(player->getClass()) : "Unknown";
-        LOG_INFO("playerbots", "[RandomBotLevelMgr] ResetBot: Bot '{}' - {} at level {} was reset to level {}.",
-            player->GetName(), playerClassName, currentLevel, levelToResetTo);
-    }
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+    LOG_DEBUG("playerbots", "[RandomBotLevelMgr] ResetBot: Bot '{}' - {} at level {} was reset to level {}.",
+        player->GetName(), botAI ? botAI->GetChatHelper()->FormatClass(player->getClass()) : "Unknown", currentLevel,
+        levelToResetTo);
 }
 
 // Sends a bot straight to AiPlayerbot.ResetBotLevel.SkipToLevel (or the Death Knight starting
@@ -869,21 +854,17 @@ void RandomBotLevelMgr::SkipBotLevel(Player* player, uint8 currentLevel)
     PlayerbotFactory newFactory(player, levelToSkipTo);
     newFactory.Randomize(false);
 
-    if (sPlayerbotAIConfig.resetBotLevelDebug)
-    {
-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
-        std::string playerClassName = botAI ? botAI->GetChatHelper()->FormatClass(player->getClass()) : "Unknown";
-        LOG_INFO("playerbots", "[RandomBotLevelMgr] SkipBotLevel: Bot '{}' - {} at level {} was skipped to level {}.",
-            player->GetName(), playerClassName, currentLevel, levelToSkipTo);
-    }
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+    LOG_DEBUG("playerbots", "[RandomBotLevelMgr] SkipBotLevel: Bot '{}' - {} at level {} was skipped to level {}.",
+        player->GetName(), botAI ? botAI->GetChatHelper()->FormatClass(player->getClass()) : "Unknown", currentLevel,
+        levelToSkipTo);
 }
 
 // Runs the periodic played-time-based reset check for bots sitting at or above MaxLevel. Only
 // reached when Enabled, RestrictTimePlayed, and MaxLevel > 0 (see Update()).
 void RandomBotLevelMgr::RunResetPlayedTimeCheck()
 {
-    if (sPlayerbotAIConfig.resetBotLevelDebug)
-        LOG_INFO("playerbots", "[RandomBotLevelMgr] OnUpdate: Starting time-based reset check...");
+    LOG_DEBUG("playerbots", "[RandomBotLevelMgr] OnUpdate: Starting time-based reset check...");
 
     auto const& allPlayers = ObjectAccessor::GetPlayers();
     for (auto const& itr : allPlayers)
@@ -908,27 +889,24 @@ void RandomBotLevelMgr::RunResetPlayedTimeCheck()
         // Only reset if the bot has played at least MinTimePlayed seconds at this level.
         if (candidate->GetLevelPlayedTime() < sPlayerbotAIConfig.resetBotLevelMinTimePlayed)
         {
-            if (sPlayerbotAIConfig.resetBotLevelDebug)
-                LOG_INFO("playerbots",
-                    "[RandomBotLevelMgr] OnUpdate: Bot '{}' at level {} has insufficient played time ({} < {} "
-                    "seconds).",
-                    candidate->GetName(), currentLevel, candidate->GetLevelPlayedTime(),
-                    sPlayerbotAIConfig.resetBotLevelMinTimePlayed);
+            LOG_DEBUG("playerbots",
+                "[RandomBotLevelMgr] OnUpdate: Bot '{}' at level {} has insufficient played time ({} < {} "
+                "seconds).",
+                candidate->GetName(), currentLevel, candidate->GetLevelPlayedTime(),
+                sPlayerbotAIConfig.resetBotLevelMinTimePlayed);
             continue;
         }
 
         uint8 resetChance = ComputeResetChance(currentLevel);
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] OnUpdate: Bot '{}' qualifies for time-based reset. Level: {}, "
-                "LevelPlayedTime: {} seconds, computed reset chance: {}%.",
-                candidate->GetName(), currentLevel, candidate->GetLevelPlayedTime(), resetChance);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnUpdate: Bot '{}' qualifies for time-based reset. Level: {}, "
+            "LevelPlayedTime: {} seconds, computed reset chance: {}%.",
+            candidate->GetName(), currentLevel, candidate->GetLevelPlayedTime(), resetChance);
         if (urand(0, 99) < resetChance)
         {
-            if (sPlayerbotAIConfig.resetBotLevelDebug)
-                LOG_INFO("playerbots",
-                    "[RandomBotLevelMgr] OnUpdate: Reset chance check passed for bot '{}'. Resetting bot.",
-                    candidate->GetName());
+            LOG_DEBUG("playerbots",
+                "[RandomBotLevelMgr] OnUpdate: Reset chance check passed for bot '{}'. Resetting bot.",
+                candidate->GetName());
             ResetBot(candidate, currentLevel);
         }
     }
@@ -989,10 +967,9 @@ void RandomBotLevelMgr::OnBotLogin(Player* player)
         // Bot is above MaxLevel: reset immediately.
         if (currentLevel > sPlayerbotAIConfig.resetBotLevelMaxLevel)
         {
-            if (sPlayerbotAIConfig.resetBotLevelDebug)
-                LOG_INFO("playerbots",
-                    "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' above max level {}. Resetting immediately.",
-                    player->GetName(), sPlayerbotAIConfig.resetBotLevelMaxLevel);
+            LOG_DEBUG("playerbots",
+                "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' above max level {}. Resetting immediately.",
+                player->GetName(), sPlayerbotAIConfig.resetBotLevelMaxLevel);
             ResetBot(player, currentLevel);
             return;
         }
@@ -1006,10 +983,9 @@ void RandomBotLevelMgr::OnBotLogin(Player* player)
                 uint8 resetChance = ComputeResetChance(currentLevel);
                 if (urand(0, 99) < resetChance)
                 {
-                    if (sPlayerbotAIConfig.resetBotLevelDebug)
-                        LOG_INFO("playerbots",
-                            "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' meets reset criteria. Resetting.",
-                            player->GetName());
+                    LOG_DEBUG("playerbots",
+                        "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' meets reset criteria. Resetting.",
+                        player->GetName());
                     ResetBot(player, currentLevel);
                 }
             }
@@ -1018,16 +994,20 @@ void RandomBotLevelMgr::OnBotLogin(Player* player)
 
     if (sPlayerbotAIConfig.resetBotLevelSkipFrom > 0 && currentLevel == sPlayerbotAIConfig.resetBotLevelSkipFrom)
     {
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots", "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' at skip level {}. Applying skip.",
-                player->GetName(), currentLevel);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnPlayerLogin: Bot '{}' at skip level {}. Applying skip.", player->GetName(),
+            currentLevel);
         SkipBotLevel(player, currentLevel);
     }
 }
 
-void RandomBotLevelMgr::OnBotLevelChanged(Player* player)
+void RandomBotLevelMgr::OnBotLevelChanged(Player* player, uint8 oldLevel)
 {
     if (!sRandomPlayerbotMgr.IsRandomBot(player))
+        return;
+
+    // Only react to a natural level up.
+    if (player->GetLevel() != oldLevel + 1)
         return;
 
     if (IsNameInExcludeList(player, sPlayerbotAIConfig.resetBotLevelExcludeNames))
@@ -1038,21 +1018,13 @@ void RandomBotLevelMgr::OnBotLevelChanged(Player* player)
         return;
 
     uint8 newLevel = player->GetLevel();
-    if (newLevel == 1)
-        return;
-
-    // Death Knights start at the heroic starting level; never treat that as a reset trigger.
-    uint8 dkMinLevel = static_cast<uint8>(sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL));
-    if (newLevel == dkMinLevel && player->getClass() == CLASS_DEATH_KNIGHT)
-        return;
 
     // SkipFromLevel takes priority and is not affected by ScaledChance or RestrictTimePlayed.
     if (sPlayerbotAIConfig.resetBotLevelSkipFrom > 0 && newLevel == sPlayerbotAIConfig.resetBotLevelSkipFrom)
     {
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' reached skip level {}. Skipping to level {}.",
-                player->GetName(), newLevel, sPlayerbotAIConfig.resetBotLevelSkipTo);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' reached skip level {}. Skipping to level {}.",
+            player->GetName(), newLevel, sPlayerbotAIConfig.resetBotLevelSkipTo);
         SkipBotLevel(player, newLevel);
         return;
     }
@@ -1063,10 +1035,9 @@ void RandomBotLevelMgr::OnBotLevelChanged(Player* player)
     // Strictly above MaxLevel: reset immediately regardless of time played.
     if (newLevel > sPlayerbotAIConfig.resetBotLevelMaxLevel)
     {
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' exceeded max level {}. Resetting immediately.",
-                player->GetName(), sPlayerbotAIConfig.resetBotLevelMaxLevel);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' exceeded max level {}. Resetting immediately.",
+            player->GetName(), sPlayerbotAIConfig.resetBotLevelMaxLevel);
         ResetBot(player, newLevel);
         return;
     }
@@ -1074,21 +1045,19 @@ void RandomBotLevelMgr::OnBotLevelChanged(Player* player)
     // Exactly at MaxLevel with a time-played restriction: defer to the OnUpdate timer.
     if (sPlayerbotAIConfig.resetBotLevelRestrictTimePlayed && newLevel == sPlayerbotAIConfig.resetBotLevelMaxLevel)
     {
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' at level {} deferred to OnUpdate due to "
-                "time-played restriction.",
-                player->GetName(), newLevel);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' at level {} deferred to OnUpdate due to "
+            "time-played restriction.",
+            player->GetName(), newLevel);
         return;
     }
 
     uint8 resetChance = ComputeResetChance(newLevel);
     if (sPlayerbotAIConfig.resetBotLevelScaledChance || newLevel >= sPlayerbotAIConfig.resetBotLevelMaxLevel)
     {
-        if (sPlayerbotAIConfig.resetBotLevelDebug)
-            LOG_INFO("playerbots",
-                "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' at level {} has reset chance {}%.",
-                player->GetName(), newLevel, resetChance);
+        LOG_DEBUG("playerbots",
+            "[RandomBotLevelMgr] OnPlayerLevelChanged: Bot '{}' at level {} has reset chance {}%.",
+            player->GetName(), newLevel, resetChance);
         if (urand(0, 99) < resetChance)
             ResetBot(player, newLevel);
     }
@@ -1162,11 +1131,11 @@ public:
         RandomBotLevelMgr::instance().OnBotLogin(player);
     }
 
-    void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
+    void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         if (!sPlayerbotAIConfig.resetBotLevelEnabled)
             return;
-        RandomBotLevelMgr::instance().OnBotLevelChanged(player);
+        RandomBotLevelMgr::instance().OnBotLevelChanged(player, oldLevel);
     }
 
     void OnPlayerLogout(Player* player) override
