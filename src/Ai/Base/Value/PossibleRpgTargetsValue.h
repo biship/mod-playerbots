@@ -46,10 +46,6 @@ public:
     PossibleNewRpgGameObjectsValue(PlayerbotAI* botAI, float range = 150.0f, bool ignoreLos = true)
         : ObjectGuidListCalculatedValue(botAI, "possible new rpg game objects"), range(range), ignoreLos(ignoreLos)
     {
-        if (allowedGOFlags.empty())
-        {
-            allowedGOFlags.push_back(GAMEOBJECT_TYPE_QUESTGIVER);
-        }
     }
 
     static std::vector<GameobjectTypes> allowedGOFlags;
