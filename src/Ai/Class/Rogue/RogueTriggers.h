@@ -43,6 +43,8 @@ public:
     BladeFuryTrigger(PlayerbotAI* botAI) : BoostTrigger(botAI, "blade fury") {}
 };
 
+CAN_CAST_TRIGGER(RiposteAvailableTrigger, "riposte");
+
 class RuptureTrigger : public DebuffTrigger
 {
 public:
