@@ -5,9 +5,6 @@
  */
 
 #include "QuestValues.h"
-
-#include <array>
-
 #include "MapMgr.h"
 #include "Playerbots.h"
 #include "SharedValueContext.h"
