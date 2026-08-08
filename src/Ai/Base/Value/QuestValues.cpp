@@ -5,9 +5,11 @@
  */
 
 #include "QuestValues.h"
+
 #include "MapMgr.h"
 #include "Playerbots.h"
 #include "SharedValueContext.h"
+#include <array>
 
 // What kind of a relation does this entry have with this quest.
 entryQuestRelationMap EntryQuestRelationMapValue::Calculate()
