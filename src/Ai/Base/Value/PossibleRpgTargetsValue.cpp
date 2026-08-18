@@ -15,7 +15,7 @@
 #include "SharedDefines.h"
 #include <unordered_set>
 
-std::vector<uint32> PossibleRpgTargetsValue::allowedNpcFlags = {
+const std::vector<uint32> PossibleRpgTargetsValue::allowedNpcFlags = {
     UNIT_NPC_FLAG_INNKEEPER,
     UNIT_NPC_FLAG_GOSSIP,
     UNIT_NPC_FLAG_QUESTGIVER,
@@ -85,7 +85,7 @@ bool PossibleRpgTargetsValue::AcceptUnit(Unit* unit)
     return false;
 }
 
-std::vector<uint32> PossibleNewRpgTargetsValue::allowedNpcFlags = {
+const std::vector<uint32> PossibleNewRpgTargetsValue::allowedNpcFlags = {
     UNIT_NPC_FLAG_INNKEEPER,
     UNIT_NPC_FLAG_GOSSIP,
     UNIT_NPC_FLAG_QUESTGIVER,
@@ -172,7 +172,7 @@ bool PossibleNewRpgTargetsValue::AcceptUnit(Unit* unit)
     return false;
 }
 
-std::vector<GameobjectTypes> PossibleNewRpgGameObjectsValue::allowedGOFlags = {
+const std::vector<GameobjectTypes> PossibleNewRpgGameObjectsValue::allowedGOFlags = {
     GAMEOBJECT_TYPE_QUESTGIVER,
 };
 

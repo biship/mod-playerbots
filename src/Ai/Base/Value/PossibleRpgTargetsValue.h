@@ -19,7 +19,7 @@ class PossibleRpgTargetsValue : public NearestUnitsValue
 public:
     PossibleRpgTargetsValue(PlayerbotAI* botAI, float range = 70.0f);
 
-    static std::vector<uint32> allowedNpcFlags;
+    static const std::vector<uint32> allowedNpcFlags;
 
 protected:
     void FindUnits(std::list<Unit*>& targets) override;
@@ -31,7 +31,7 @@ class PossibleNewRpgTargetsValue : public NearestUnitsValue
 public:
     PossibleNewRpgTargetsValue(PlayerbotAI* botAI, float range = 150.0f);
 
-    static std::vector<uint32> allowedNpcFlags;
+    static const std::vector<uint32> allowedNpcFlags;
     GuidVector Calculate() override;
 protected:
     void FindUnits(std::list<Unit*>& targets) override;
@@ -48,7 +48,7 @@ public:
     {
     }
 
-    static std::vector<GameobjectTypes> allowedGOFlags;
+    static const std::vector<GameobjectTypes> allowedGOFlags;
     GuidVector Calculate() override;
 
 private:
