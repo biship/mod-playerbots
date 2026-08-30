@@ -69,8 +69,8 @@ private:
     }
     ~SharedValueContext() = default;
 
-    SharedValueContext(const SharedValueContext&) = delete;
-    SharedValueContext& operator=(const SharedValueContext&) = delete;
+    SharedValueContext(SharedValueContext const&) = delete;
+    SharedValueContext& operator=(SharedValueContext const&) = delete;
 
     SharedValueContext(SharedValueContext&&) = delete;
     SharedValueContext& operator=(SharedValueContext&&) = delete;
