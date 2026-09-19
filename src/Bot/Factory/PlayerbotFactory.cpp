@@ -5,6 +5,7 @@
  */
 
 #include "PlayerbotFactory.h"
+#include "PlayerbotsDatabase.h"
 #include "AccountMgr.h"
 #include "AiFactory.h"
 #include "AiObjectContext.h"
@@ -39,6 +40,7 @@
 #include "Trainer.h"
 #include "World.h"
 #include <array>
+#include <unordered_set>
 #include <utility>
 
 #include <array>
@@ -113,6 +115,29 @@ constexpr uint32 SPELL_IMPROVED_HOWL_OF_TERROR = 30057;
 constexpr uint32 SPELL_NEMESIS = 63123;
 constexpr uint32 SPELL_INTENSITY = 18136;
 constexpr uint32 SPELL_NETHER_PROTECTION = 30302;
+
+// Some creature_template rows are Blizzard developer leftovers or placeholders that carry the tameable
+// flag but have no spawn in the world - e.g. 5596 "Twain Test Prop", a wolf family beast wearing a
+// dragon whelp model. No player can ever tame those, so bots should not end up with them either.
+bool HasCreatureSpawnRow(uint32 entry)
+{
+    static std::unordered_set<uint32> const spawnedEntries = []  // built once, at first use
+    {
+        std::unordered_set<uint32> entries;
+        for (auto const& itr : sObjectMgr->GetAllCreatureData())
+        {
+            CreatureData const& data = itr.second;
+            entries.insert(data.id);
+            if (data.id2)
+                entries.insert(data.id2);
+            if (data.id3)
+                entries.insert(data.id3);
+        }
+        return entries;
+    }();
+
+    return spawnedEntries.find(entry) != spawnedEntries.end();
+}
 }
 
 bool PlayerbotFactory::IsPrimaryTradeSkill(uint16 skillId)
@@ -362,18 +387,6 @@ std::pair<uint16, uint16> PlayerbotFactory::ChooseProfessionPair(
 
     WeightedProfessionPair const& fallback = professionPairs.back();
     return {fallback.firstSkill, fallback.secondSkill};
-}
-
-bool PlayerbotFactory::HasProfessionPair(std::vector<WeightedProfessionPair> const& professionPairs,
-                                         uint16 firstSkill, uint16 secondSkill)
-{
-    for (WeightedProfessionPair const& pair : professionPairs)
-    {
-        if (pair.firstSkill == firstSkill && pair.secondSkill == secondSkill)
-            return true;
-    }
-
-    return false;
 }
 
 uint16 PlayerbotFactory::ChooseSingleProfession(std::vector<WeightedProfessionPair> const& professionPairs)
@@ -1464,6 +1477,9 @@ void PlayerbotFactory::InitPet()
         for (CreatureTemplateContainer::const_iterator itr = creatures->begin(); itr != creatures->end(); ++itr)
         {
             if (!itr->second.IsTameable(bot->CanTameExoticPets()))
+                continue;
+
+            if (!HasCreatureSpawnRow(itr->first))
                 continue;
 
             if (itr->second.minlevel > bot->GetLevel())
@@ -4873,6 +4889,9 @@ void PlayerbotFactory::InitGuild()
         return;
     }
 
+    if (sPlayerbotAIConfig.deleteRandomBotGuilds)
+        return;
+
     std::string guildName = PlayerbotGuildMgr::instance().AssignToGuild(bot);
     if (guildName.empty())
         return;
@@ -5086,8 +5105,6 @@ void PlayerbotFactory::ApplyEnchantTemplate(uint8 spec)
 
 void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
 {
-    //int32 bestGemEnchantId[4] = {-1, -1, -1, -1};  // 1, 2, 4, 8 color //not used, line marked for removal.
-    //float bestGemScore[4] = {0, 0, 0, 0}; //not used, line marked for removal.
     std::vector<uint32> curCount = GetCurrentGemsCount();
     uint8 jewelersCount = 0;
     int requiredActive = 2;
@@ -5108,9 +5125,7 @@ void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
         uint32 requiredLevel = gemTemplate->ItemLevel;
 
         if (requiredLevel > bot->GetLevel())
-        {
             continue;
-        }
 
         uint32 enchant_id = gemProperties->spellitemenchantement;
         if (!enchant_id)
@@ -5118,18 +5133,14 @@ void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
 
         SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
         if (!enchant || (enchant->slot != PERM_ENCHANTMENT_SLOT && enchant->slot != TEMP_ENCHANTMENT_SLOT))
-        {
             continue;
-        }
+
         if (enchant->requiredSkill && bot->GetSkillValue(enchant->requiredSkill) < enchant->requiredSkillValue)
-        {
             continue;
-        }
 
         if (enchant->requiredLevel > bot->GetLevel())
-        {
             continue;
-        }
+
         availableGems.push_back(enchantGem);
     }
     StatsWeightCalculator calculator(bot);
@@ -5139,9 +5150,7 @@ void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
             continue;
         Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (!item || !item->GetOwner())
-        {
             continue;
-        }
 
         if (item->GetTemplate() && item->GetTemplate()->Quality < ITEM_QUALITY_UNCOMMON)
             continue;
@@ -5222,6 +5231,9 @@ void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
                 if (!gemTemplate)
                     continue;
 
+                if (gemTemplate->Quality > item->GetTemplate()->Quality)
+                    continue;
+
                 // Limit jewelers (JC) epic gems to 3
                 bool isJewelersGem = gemTemplate->ItemLimitCategory == 2;
                 if (isJewelersGem && jewelersCount >= 3)
@@ -5238,7 +5250,6 @@ void PlayerbotFactory::ApplyEnchantAndGemsNew(bool /*destroyOld*/)
                 if (!enchant_id)
                     continue;
 
-                //SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id); //not used, line marked for removal.
                 StatsWeightCalculator calculator(bot);
                 float score = calculator.CalculateEnchant(enchant_id);
                 if (curCount[0] != 0)
