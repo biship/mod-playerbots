@@ -41,7 +41,7 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* botAI)
             AiObjectContext* context = botAI->GetAiObjectContext();
             time_t combatStartTime = context->GetValue<time_t>("combat start time")->Get();
 
-            if (botAI->GetState() == BOT_STATE_COMBAT)
+            if (bot->IsInCombat())
             {
                 if (combatStartTime == 0)
                 {
@@ -49,7 +49,13 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* botAI)
                     context->GetValue<time_t>("combat start time")->Set(combatStartTime);
                 }
 
-                return time(nullptr) - combatStartTime < GetWaitTime(botAI);
+                time_t elapsedTime = time(nullptr) - combatStartTime;
+                return elapsedTime < GetWaitTime(botAI);
+            }
+            else
+            {
+                if (combatStartTime != 0)
+                    context->GetValue<time_t>("combat start time")->Set(0);
             }
         }
     }

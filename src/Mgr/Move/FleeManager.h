@@ -17,7 +17,8 @@ class PlayerbotAI;
 class FleePoint
 {
 public:
-    FleePoint(float x, float y, float z) : x(x), y(y), z(z), sumDistance(0.0f), minDistance(0.0f)
+    FleePoint(PlayerbotAI* botAI, float x, float y, float z)
+        : x(x), y(y), z(z), sumDistance(0.0f), minDistance(0.0f), botAI(botAI)
     {
     }
 
@@ -27,6 +28,9 @@ public:
 
     float sumDistance;
     float minDistance;
+
+private:
+    PlayerbotAI* botAI;
 };
 
 class FleeManager

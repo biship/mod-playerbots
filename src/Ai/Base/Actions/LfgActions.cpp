@@ -172,7 +172,7 @@ bool LfgJoinAction::JoinLFG()
 
 bool LfgRoleCheckAction::Execute(Event /*event*/)
 {
-    if (bot->GetGroup())
+    if (Group* group = bot->GetGroup())
     {
         uint32 newRoles = GetRoles();
         // if (currentRoles == newRoles)

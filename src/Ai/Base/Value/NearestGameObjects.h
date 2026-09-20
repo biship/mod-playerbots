@@ -45,6 +45,7 @@ protected:
 
 private:
     float range;
+    bool ignoreLos;
 };
 
 class NearestTrapWithDamageValue : public ObjectGuidListCalculatedValue

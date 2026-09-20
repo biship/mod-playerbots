@@ -8,8 +8,6 @@
 #define PLAYERBOTS_SETHSTRATEGY_H
 
 #include "Strategy.h"
-#include <string>
-#include <vector>
 
 class TbcDungeonSethekkHallsStrategy : public Strategy
 {

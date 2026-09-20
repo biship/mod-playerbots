@@ -179,7 +179,7 @@ protected:
     void OnBotLoginInternal(Player* const bot) override;
 
 private:
-    RandomPlayerbotMgr() : PlayerbotHolder()
+    RandomPlayerbotMgr() : PlayerbotHolder(), processTicks(0)
     {
         this->playersLevel = sPlayerbotAIConfig.randombotStartingLevel;
 
@@ -244,12 +244,14 @@ private:
     std::vector<WorldLocation> GetPlayerZoneTeleportLocations(std::vector<WorldLocation> const& locs, Player* bot);
     typedef void (RandomPlayerbotMgr::*ConsoleCommandHandler)(Player*);
     std::vector<Player*> players;
+    uint32 processTicks;
 
     // std::map<uint32, std::vector<WorldLocation>> rpgLocsCache;
     std::map<uint32, std::map<uint32, std::vector<WorldLocation>>> rpgLocsCacheLevel;
     std::map<TeamId, std::map<BattlegroundTypeId, std::vector<uint32>>> BattleMastersCache;
     std::unordered_map<uint32, BotEventCache> eventCache;
     std::unordered_set<uint32> currentBots;
+    uint32 bgBotsCount;
     uint32 playersLevel;
 
     // Account lists

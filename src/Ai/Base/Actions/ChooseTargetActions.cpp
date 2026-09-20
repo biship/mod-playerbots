@@ -92,9 +92,12 @@ bool AttackAnythingAction::Execute(Event event)
     {
         if (Unit* grindTarget = GetTarget())
         {
-            context->GetValue<ObjectGuid>("pull target")->Set(grindTarget->GetGUID());
-            bot->GetMotionMaster()->Clear();
-            // bot->StopMoving();
+            if (char const* grindName = grindTarget->GetName().c_str())
+            {
+                context->GetValue<ObjectGuid>("pull target")->Set(grindTarget->GetGUID());
+                bot->GetMotionMaster()->Clear();
+                // bot->StopMoving();
+            }
         }
     }
 

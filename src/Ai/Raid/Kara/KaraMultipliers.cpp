@@ -22,7 +22,6 @@
 #include "RogueActions.h"
 #include "ShamanActions.h"
 #include "WarriorActions.h"
-#include <ctime>
 
 using namespace KaraHelpers;
 
@@ -75,9 +74,6 @@ float AttumenTheHuntsmanDisableAutomaticTargetingMultiplier::GetValue(Action* ac
 
 float AttumenTheHuntsmanStayStackedMultiplier::GetValue(Action* action)
 {
-    if (PlayerbotAI::IsTank(bot))
-        return 1.0f;
-
     if (dynamic_cast<AttackAction*>(action) ||
         dynamic_cast<AttumenTheHuntsmanHandlePhaseTwoAction*>(action))
     {

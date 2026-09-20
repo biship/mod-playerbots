@@ -8,6 +8,7 @@
 #include "AiObjectContext.h"
 #include "KaraHelpers.h"
 #include "KaraMultipliers.h"
+#include "PlayerbotAI.h"
 #include "Playerbots.h"
 
 void RaidKarazhanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
